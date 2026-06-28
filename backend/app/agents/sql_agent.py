@@ -11,7 +11,6 @@ from app.agents.base_agent import BaseAgent
 from app.agents.prompts import SQL_AGENT_PROMPT
 from app.llm.groq_client import get_chat_model
 from app.utils.logger import logger
-from app.utils.exceptions import AgentExecutionError
 
 
 class SQLAgent(BaseAgent):

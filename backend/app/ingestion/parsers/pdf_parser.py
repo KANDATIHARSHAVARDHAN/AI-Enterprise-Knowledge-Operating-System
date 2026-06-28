@@ -4,7 +4,6 @@ Extracts text from PDF files using PyMuPDF with table detection support.
 """
 
 from pathlib import Path
-from typing import Optional
 import fitz  # PyMuPDF
 from app.utils.logger import logger
 from app.utils.exceptions import IngestionError

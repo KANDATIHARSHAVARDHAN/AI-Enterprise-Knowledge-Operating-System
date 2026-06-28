@@ -3,12 +3,10 @@ EKOS Memory Agent
 Manages conversation context and long-term memory.
 """
 
-from datetime import datetime
-from typing import Optional
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.base_agent import BaseAgent
-from app.db.models import Message, Conversation, MemoryStore
+from app.db.models import Message, MemoryStore
 from app.utils.logger import logger
 
 

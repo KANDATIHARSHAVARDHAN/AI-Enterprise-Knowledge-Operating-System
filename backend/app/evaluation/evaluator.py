@@ -4,9 +4,8 @@ Computes RAG quality metrics using custom implementations
 compatible with RAGAS and DeepEval frameworks.
 """
 
-from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.models import EvaluationResult, QueryLog
+from app.db.models import EvaluationResult
 from app.llm.groq_client import get_groq_client
 from app.utils.logger import logger
 import json

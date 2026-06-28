@@ -4,9 +4,7 @@ Handles question asking, streaming responses, and query history.
 """
 
 import time
-import json
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from pydantic import BaseModel

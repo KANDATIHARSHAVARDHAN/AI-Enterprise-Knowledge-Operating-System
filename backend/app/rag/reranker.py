@@ -3,7 +3,6 @@ EKOS Cross-Encoder Reranker
 Reranks retrieved results using a cross-encoder model for better precision.
 """
 
-from typing import Optional
 from app.utils.logger import logger
 
 

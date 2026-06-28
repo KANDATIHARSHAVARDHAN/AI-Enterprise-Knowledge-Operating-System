@@ -39,7 +39,7 @@ class CSVParser:
             content = "\n".join(lines)
 
             # Also generate a summary
-            summary = f"Dataset Summary:\n"
+            summary = "Dataset Summary:\n"
             summary += f"- Rows: {len(df)}\n"
             summary += f"- Columns: {len(headers)}\n"
             for col in headers:

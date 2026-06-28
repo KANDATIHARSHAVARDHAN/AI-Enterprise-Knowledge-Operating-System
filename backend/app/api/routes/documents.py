@@ -5,7 +5,6 @@ Handles document upload, listing, deletion, and chunk viewing.
 
 import os
 import uuid
-import shutil
 from pathlib import Path
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession

@@ -3,11 +3,8 @@ EKOS Document Ingestion Pipeline
 Orchestrates the full pipeline: parse → chunk → embed → store in FAISS + MySQL.
 """
 
-import os
 from pathlib import Path
-from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 from app.config import get_settings
 from app.utils.logger import logger

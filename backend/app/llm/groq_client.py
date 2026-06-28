@@ -3,7 +3,6 @@ EKOS Groq LLM Client
 Provides async Groq API access with retry logic, rate limiting, and streaming support.
 """
 
-import asyncio
 import time
 from typing import AsyncGenerator, Optional
 from groq import AsyncGroq, Groq

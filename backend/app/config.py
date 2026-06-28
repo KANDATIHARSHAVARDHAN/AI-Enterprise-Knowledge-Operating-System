@@ -3,7 +3,6 @@ EKOS Application Configuration
 Loads environment variables with Pydantic Settings for type safety and validation.
 """
 
-import os
 from pathlib import Path
 from functools import lru_cache
 from pydantic_settings import BaseSettings

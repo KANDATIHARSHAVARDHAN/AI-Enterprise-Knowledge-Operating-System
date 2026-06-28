@@ -10,7 +10,6 @@ from pydantic import BaseModel
 from app.db.database import get_db
 from app.db.models import User, Document, QueryLog, AuditLog
 from app.api.dependencies import get_current_user
-from app.security.rbac import has_permission
 from app.db.vector_store import get_vector_store
 from app.db.knowledge_graph import get_knowledge_graph
 

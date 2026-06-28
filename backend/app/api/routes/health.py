@@ -39,7 +39,7 @@ async def health_check(db: AsyncSession = Depends(get_db)):
     # Groq API check
     try:
         from app.llm.groq_client import get_groq_client
-        client = get_groq_client()
+        get_groq_client()
         checks["groq"] = {
             "status": "healthy" if settings.groq_api_key else "unconfigured",
         }

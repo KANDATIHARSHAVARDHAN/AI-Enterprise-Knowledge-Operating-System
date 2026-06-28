@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
-from app.db.database import init_db, close_db
+from app.db.database import close_db
 from app.db.vector_store import get_vector_store
 from app.db.knowledge_graph import get_knowledge_graph
 from app.api.middleware.request_logger import RequestLoggerMiddleware

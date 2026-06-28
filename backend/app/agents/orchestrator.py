@@ -4,7 +4,7 @@ Uses LangGraph to orchestrate the multi-agent workflow with conditional routing.
 """
 
 import time
-from typing import TypedDict, Optional, Annotated
+from typing import TypedDict
 from langgraph.graph import StateGraph, END
 from sqlalchemy.ext.asyncio import AsyncSession
 

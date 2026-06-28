@@ -5,7 +5,6 @@ Abstract base class for all agents with common functionality.
 
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Optional
 from app.utils.logger import logger
 from app.utils.exceptions import AgentExecutionError, AgentTimeoutError
 

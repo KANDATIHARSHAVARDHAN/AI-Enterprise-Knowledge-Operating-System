@@ -6,7 +6,7 @@ Handles user registration, login, token refresh, and profile.
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from app.db.database import get_db
 from app.db.models import User, AuditLog
 from app.security.auth import (

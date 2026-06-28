@@ -4,7 +4,6 @@ Extracts text from images via OCR (Tesseract) and generates descriptions.
 """
 
 from pathlib import Path
-from typing import Optional
 from PIL import Image
 from app.utils.logger import logger
 from app.utils.exceptions import IngestionError

@@ -5,7 +5,6 @@ Extracts structured metadata from documents for filtering and search.
 
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
 
 
 class MetadataExtractor:
