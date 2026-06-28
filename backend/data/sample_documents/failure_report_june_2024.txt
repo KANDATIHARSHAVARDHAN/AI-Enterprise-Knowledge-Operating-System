@@ -1,0 +1,22 @@
+# INCIDENT INVESTIGATION REPORT: JUNE 2024 MACHINE X FAILURES
+
+## Date of Incident: June 3, 2024
+- Machine: CNC Milling Machine X (MCH-X001)
+- Operator: John Martinez
+- Event: Spindle bearing overheating auto-shutdown.
+- Investigation: Spindle bearing temperature exceeded 95°C threshold. The bearing set (SKF 7210) had completed 9,200 hours of operation, which exceeded the recommended 8,000-hour service life by 1,200 hours.
+- Action Taken: Emergency replacement of the spindle bearing set by Carlos Rodriguez. Recommended reducing spindle RPM by 10% for the first 200 hours of break-in.
+
+## Date of Incident: June 12, 2024
+- Machine: CNC Milling Machine X (MCH-X001)
+- Operator: Sarah Chen
+- Event: Coolant pressure loss shutdown.
+- Investigation: Coolant flow pressure dropped below 1.5 bar. The coolant pump impeller was found cracked. Metal shavings had bypassed the reservoir filter and accumulated in the pump chamber.
+- Action Taken: Flushed coolant reservoir, replaced pump impeller (Grundfos CRN-3), and installed an inline secondary filter.
+
+## Date of Incident: June 21, 2024
+- Machine: CNC Milling Machine X (MCH-X001)
+- Operator: Mike Thompson
+- Event: Emergency stop activated mid-cycle.
+- Investigation: Tool ejected from spindle during high-speed milling of batch #4421. The hydraulic clamp line pressure had dropped below 280 bar. A micro-leak was discovered at hydraulic line junction B7.
+- Action Taken: Replaced Parker H-series junction seals and rebuilt clamp actuator. Installed a secondary pressure gauge at junction B7 for continuous monitoring.

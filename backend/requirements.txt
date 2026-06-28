@@ -1,0 +1,68 @@
+# ============================================
+# EKOS - Enterprise Knowledge Operating System
+# Backend Dependencies
+# ============================================
+
+# === Web Framework ===
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+sse-starlette==2.2.1
+
+# === Database ===
+sqlalchemy==2.0.36
+aiomysql==0.2.0
+pymysql==1.1.1
+alembic==1.14.1
+
+# === LLM & AI ===
+groq==0.13.1
+google-generativeai==0.8.5
+langgraph==0.2.60
+langchain-core==0.3.33
+langchain-groq==0.2.4
+
+# === Document Parsing ===
+PyMuPDF==1.25.3
+python-docx==1.1.2
+openpyxl==3.1.5
+pandas==2.2.3
+Pillow==11.1.0
+pytesseract==0.3.13
+
+# === Vector Store & Retrieval ===
+faiss-cpu==1.9.0.post1
+rank-bm25==0.2.2
+sentence-transformers==3.3.1
+
+# === Knowledge Graph ===
+networkx==3.4.2
+
+# === Security ===
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.2.1
+
+# ragas>=0.2.0
+# deepeval>=2.0.0
+
+# === Experiment Tracking ===
+mlflow>=2.0.0
+
+# === Utilities ===
+python-dotenv==1.0.1
+pydantic==2.10.4
+pydantic-settings==2.7.1
+httpx==0.28.1
+tenacity==9.0.0
+pyyaml==6.0.2
+numpy==1.26.4
+
+# === Testing ===
+pytest==8.3.4
+pytest-asyncio==0.25.0
+pytest-cov==6.0.0
+httpx==0.28.1
+
+# === Linting ===
+ruff==0.8.6

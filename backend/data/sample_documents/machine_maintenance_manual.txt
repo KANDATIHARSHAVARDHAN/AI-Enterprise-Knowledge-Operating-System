@@ -1,0 +1,20 @@
+# CNC MILLING MACHINE X (MCH-X001) - MAINTENANCE MANUAL
+## Section 1: Spindle Assembly Maintenance
+The spindle assembly of the CNC Milling Machine X (MCH-X001) is a high-precision component operating at speeds up to 12,000 RPM.
+- Recommended Spindle Bearing: SKF 7210 Angular Contact Ball Bearing.
+- Service Life: The spindle bearing set has an expected service life of 8,000 operational hours.
+- Overheating: Operating the spindle with a bearing that has exceeded its service life can lead to rapid thermal expansion and overheating (exceeding 95°C), which triggers an automatic emergency shutdown.
+- Lubrication: Use Mobil SHC 100 synthetic grease. Apply exactly 5ml every 1,000 operational hours.
+
+## Section 2: Coolant System Specifications
+The coolant system keeps the cutting tool and workpiece within temperature tolerances.
+- Pump Model: Grundfos CRN-3 high-pressure centrifugal pump.
+- Filter Replacement: Coolant filter must be replaced every 3 months or if flow pressure drops below 2.0 bar.
+- Contamination: Metal shavings and particulate debris must be cleaned from the coolant reservoir weekly to prevent pump impeller damage and clogging of the nozzles.
+- Impeller Failure: If the coolant pump impeller cracks, it leads to a complete flow loss, resulting in machine overheating within 15 minutes of operation.
+
+## Section 3: Hydraulic Clamping System
+The tool holder clamp is hydraulically actuated.
+- Operating Pressure: 350 bar nominal pressure.
+- Safety Lockout: If the pressure drops below 280 bar, the machine will trigger an emergency halt to prevent tool ejection.
+- Junction B7: The main junction seal (Parker H-series) is subject to high vibration and must be inspected monthly for micro-leaks. A drop in hydraulic line pressure is almost always caused by a micro-leak at Junction B7.
