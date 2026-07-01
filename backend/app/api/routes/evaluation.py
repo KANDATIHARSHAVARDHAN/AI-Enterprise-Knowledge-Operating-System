@@ -18,7 +18,7 @@ async def get_aggregate_metrics(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get aggregate evaluation metrics across all queries."""
+    """Get aggregate evaluation metrics for the current user's queries."""
     result = await db.execute(
         select(
             EvaluationResult.metric_name,
@@ -26,11 +26,14 @@ async def get_aggregate_metrics(
             func.min(EvaluationResult.score).label("min_score"),
             func.max(EvaluationResult.score).label("max_score"),
             func.count(EvaluationResult.id).label("count"),
-        ).group_by(EvaluationResult.metric_name)
+        )
+        .join(QueryLog, EvaluationResult.query_log_id == QueryLog.id)
+        .where(QueryLog.user_id == current_user.id)
+        .group_by(EvaluationResult.metric_name)
     )
     metrics = result.all()
 
-    # Also get overall query stats
+    # Also get overall query stats for this user
     query_stats = await db.execute(
         select(
             func.count(QueryLog.id).label("total_queries"),
@@ -38,7 +41,7 @@ async def get_aggregate_metrics(
             func.sum(
                 func.IF(QueryLog.status == "success", 1, 0)
             ).label("successful_queries"),
-        )
+        ).where(QueryLog.user_id == current_user.id)
     )
     stats = query_stats.one_or_none()
 
@@ -67,7 +70,14 @@ async def get_query_evaluation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get evaluation results for a specific query."""
+    """Get evaluation results for a specific query. Ownership check applied."""
+    # Verify ownership
+    log = await db.get(QueryLog, query_id)
+    if not log:
+        raise HTTPException(status_code=404, detail="Query not found")
+    if current_user.role != "admin" and log.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
     result = await db.execute(
         select(EvaluationResult)
         .where(EvaluationResult.query_log_id == query_id)
@@ -98,9 +108,10 @@ async def get_recent_evaluations(
     current_user: User = Depends(get_current_user),
     limit: int = 20,
 ):
-    """Get recent evaluation results with query info."""
+    """Get recent evaluation results for the current user."""
     result = await db.execute(
         select(QueryLog)
+        .where(QueryLog.user_id == current_user.id)
         .order_by(desc(QueryLog.created_at))
         .limit(limit)
     )

@@ -1,6 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { evaluationService } from '../services/api';
-import { Activity, ShieldCheck, Flame, Compass, RefreshCw, BarChart } from 'lucide-react';
+import { Activity, ShieldCheck, Flame, Compass, RefreshCw, BarChart, AlertCircle } from 'lucide-react';
+
+const METRIC_CONFIG = {
+  answer_relevance: { label: 'Answer Relevance', desc: 'Aligns response to query intent', icon: <ShieldCheck className="text-cyan" />, barClass: 'bg-cyan' },
+  faithfulness: { label: 'Faithfulness', desc: 'Degree of support from retrieved context', icon: <ShieldCheck className="text-emerald" />, barClass: 'bg-cyan' },
+  context_precision: { label: 'Context Precision', desc: 'Fraction of relevant chunks retrieved', icon: <Compass className="text-pink" />, barClass: 'bg-cyan' },
+  hallucination_rate: { label: 'Hallucination Rate', desc: 'Ratio of unsupported claims in answer', icon: <Flame className="text-red" />, barClass: 'bg-red-400' },
+  context_recall: { label: 'Context Recall', desc: 'Coverage of ground truth by retrieved contexts', icon: <Compass className="text-purple" />, barClass: 'bg-cyan' },
+};
 
 const Evaluation = () => {
   const [metricsData, setMetricsData] = useState(null);
@@ -12,6 +20,7 @@ const Evaluation = () => {
   }, []);
 
   const fetchEvaluationData = async () => {
+    setLoading(true);
     try {
       const metrics = await evaluationService.getMetrics();
       setMetricsData(metrics);
@@ -34,25 +43,23 @@ const Evaluation = () => {
     );
   }
 
-  // Fallback metric values if none exist yet in DB
-  const defaultMetrics = [
-    { metric_name: 'answer_relevance', label: 'Answer Relevance', score: 0.92, desc: 'Aligns response to query intent', icon: <ShieldCheck className="text-cyan" /> },
-    { metric_name: 'faithfulness', label: 'Faithfulness', score: 0.95, desc: 'Degree of support from retrieved context', icon: <ShieldCheck className="text-emerald" /> },
-    { metric_name: 'context_precision', label: 'Context Precision', score: 0.88, desc: 'Fraction of relevant chunks retrieved', icon: <Compass className="text-pink" /> },
-    { metric_name: 'hallucination_rate', label: 'Hallucination Rate', score: 0.05, desc: 'Ratio of unsupported claims in answer', icon: <Flame className="text-red" /> },
-  ];
-
-  // Map API metrics
-  const activeMetrics = defaultMetrics.map(def => {
-    const apiMetric = metricsData?.metrics?.find(m => m.metric_name === def.metric_name);
-    if (apiMetric) {
-      return {
-        ...def,
-        score: apiMetric.avg_score,
-      };
-    }
-    return def;
+  // Build metric cards from real API data only (no fake defaults)
+  const apiMetrics = metricsData?.metrics || [];
+  const activeMetrics = apiMetrics.map(m => {
+    const config = METRIC_CONFIG[m.metric_name] || {
+      label: m.metric_name,
+      desc: '',
+      icon: <Activity className="text-cyan" />,
+      barClass: 'bg-cyan',
+    };
+    return {
+      ...config,
+      metric_name: m.metric_name,
+      score: m.avg_score,
+    };
   });
+
+  const hasMetrics = activeMetrics.length > 0;
 
   return (
     <div className="page-wrapper animate-fadeIn">
@@ -62,28 +69,36 @@ const Evaluation = () => {
       </div>
 
       {/* Metrics Cards Grid */}
-      <div className="metrics-grid">
-        {activeMetrics.map((metric, index) => (
-          <div key={index} className="metric-card glass">
-            <div className="card-header flex items-center justify-between border-b border-slate-700/50 pb-2 mb-3">
-              <span className="flex items-center gap-2 text-sm font-bold text-slate-200">
-                {metric.icon}
-                {metric.label}
-              </span>
-              <span className={`score-value ${metric.metric_name === 'hallucination_rate' ? (metric.score < 0.15 ? 'good' : 'bad') : (metric.score > 0.8 ? 'good' : 'bad')}`}>
-                {(metric.score * 100).toFixed(0)}%
-              </span>
+      {hasMetrics ? (
+        <div className="metrics-grid">
+          {activeMetrics.map((metric, index) => (
+            <div key={index} className="metric-card glass">
+              <div className="card-header flex items-center justify-between border-b border-slate-700/50 pb-2 mb-3">
+                <span className="flex items-center gap-2 text-sm font-bold text-slate-200">
+                  {metric.icon}
+                  {metric.label}
+                </span>
+                <span className={`score-value ${metric.metric_name === 'hallucination_rate' ? (metric.score < 0.15 ? 'good' : 'bad') : (metric.score > 0.8 ? 'good' : 'bad')}`}>
+                  {(metric.score * 100).toFixed(0)}%
+                </span>
+              </div>
+              <div className="progress-bar-container bg-slate-800 h-2 rounded-full overflow-hidden">
+                <div 
+                  className={`progress-fill h-full ${metric.barClass}`} 
+                  style={{ width: `${metric.score * 100}%` }}
+                ></div>
+              </div>
+              <p className="metric-desc text-slate-400 text-xs mt-3 leading-relaxed">{metric.desc}</p>
             </div>
-            <div className="progress-bar-container bg-slate-800 h-2 rounded-full overflow-hidden">
-              <div 
-                className={`progress-fill h-full ${metric.metric_name === 'hallucination_rate' ? 'bg-red-400' : 'bg-cyan'}`} 
-                style={{ width: `${metric.score * 100}%` }}
-              ></div>
-            </div>
-            <p className="metric-desc text-slate-400 text-xs mt-3 leading-relaxed">{metric.desc}</p>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <div className="vault-card glass p-8 rounded-xl text-center">
+          <AlertCircle size={48} className="text-slate-500 mx-auto mb-4" />
+          <h3 className="text-slate-200 text-lg font-semibold mb-2">No Evaluation Data Yet</h3>
+          <p className="text-slate-400">Run queries through the Chat page to generate real evaluation metrics. Scores for answer relevance, faithfulness, context precision, and hallucination rate will appear here automatically.</p>
+        </div>
+      )}
 
       {/* Stats Summary Panel */}
       <div className="kpis-grid mt-6">

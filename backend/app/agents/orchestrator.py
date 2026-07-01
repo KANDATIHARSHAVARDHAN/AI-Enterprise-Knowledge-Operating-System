@@ -166,35 +166,52 @@ class AgentOrchestrator:
 
     # === Node execution wrappers ===
 
+    async def _safe_run_agent(self, agent, state: AgentState) -> AgentState:
+        """Run an agent safely, catching errors to allow graceful degradation."""
+        try:
+            return await agent.run(dict(state))
+        except Exception as e:
+            logger.error(
+                f"Orchestrator caught exception running agent '{agent.name}': {e}",
+                exc_info=True
+            )
+            trace = list(state.get("agent_trace", []))
+            trace.append({
+                "agent": agent.name,
+                "status": "failed",
+                "error": str(e),
+            })
+            return {"agent_trace": trace, "error": f"{agent.name} failed: {str(e)}"}
+
     async def _run_memory(self, state: AgentState) -> AgentState:
-        return await self.memory_agent.run(dict(state))
+        return await self._safe_run_agent(self.memory_agent, state)
 
     async def _run_planner(self, state: AgentState) -> AgentState:
-        return await self.planner.run(dict(state))
+        return await self._safe_run_agent(self.planner, state)
 
     async def _run_retriever(self, state: AgentState) -> AgentState:
-        return await self.retriever.run(dict(state))
+        return await self._safe_run_agent(self.retriever, state)
 
     async def _run_sql(self, state: AgentState) -> AgentState:
-        return await self.sql_agent.run(dict(state))
+        return await self._safe_run_agent(self.sql_agent, state)
 
     async def _run_vision(self, state: AgentState) -> AgentState:
-        return await self.vision_agent.run(dict(state))
+        return await self._safe_run_agent(self.vision_agent, state)
 
     async def _run_graph(self, state: AgentState) -> AgentState:
-        return await self.graph_agent.run(dict(state))
+        return await self._safe_run_agent(self.graph_agent, state)
 
     async def _run_reasoning(self, state: AgentState) -> AgentState:
-        return await self.reasoning_agent.run(dict(state))
+        return await self._safe_run_agent(self.reasoning_agent, state)
 
     async def _run_critic(self, state: AgentState) -> AgentState:
-        return await self.critic_agent.run(dict(state))
+        return await self._safe_run_agent(self.critic_agent, state)
 
     async def _run_fact_checker(self, state: AgentState) -> AgentState:
-        return await self.fact_checker.run(dict(state))
+        return await self._safe_run_agent(self.fact_checker, state)
 
     async def _run_report(self, state: AgentState) -> AgentState:
-        return await self.report_generator.run(dict(state))
+        return await self._safe_run_agent(self.report_generator, state)
 
     # === Routing functions ===
 

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc
 from pydantic import BaseModel
 from app.db.database import get_db
-from app.db.models import User, Document, QueryLog, AuditLog
+from app.db.models import User, Document, QueryLog, AuditLog, MachineEvent
 from app.api.dependencies import get_current_user
 from app.db.vector_store import get_vector_store
 from app.db.knowledge_graph import get_knowledge_graph
@@ -167,3 +167,65 @@ async def get_audit_logs(
             for log in logs
         ],
     }
+
+
+@router.get("/dashboard-data")
+async def get_dashboard_chart_data(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get real dashboard chart data from the machine_events table.
+    Returns machine failure aggregations and severity distribution.
+    Accessible to all logged-in users (not admin-only).
+    """
+    # Machine failure data: group by machine_name
+    machine_result = await db.execute(
+        select(
+            MachineEvent.machine_name,
+            func.count(MachineEvent.id).label("failures"),
+            func.sum(MachineEvent.cost_usd).label("cost"),
+            func.sum(MachineEvent.downtime_hours).label("downtime"),
+        )
+        .where(MachineEvent.event_type == "failure")
+        .group_by(MachineEvent.machine_name)
+        .order_by(desc(func.count(MachineEvent.id)))
+    )
+    machine_data = [
+        {
+            "name": row.machine_name,
+            "failures": row.failures,
+            "cost": float(row.cost or 0),
+            "downtime": float(row.downtime or 0),
+        }
+        for row in machine_result.all()
+    ]
+
+    # Severity distribution: count events per severity level
+    severity_result = await db.execute(
+        select(
+            MachineEvent.severity,
+            func.count(MachineEvent.id).label("value"),
+        )
+        .group_by(MachineEvent.severity)
+    )
+    severity_colors = {
+        "critical": "#f87171",
+        "high": "#fb923c",
+        "medium": "#fbbf24",
+        "low": "#38bdf8",
+    }
+    severity_data = [
+        {
+            "name": row.severity.capitalize() if row.severity else "Unknown",
+            "value": row.value,
+            "color": severity_colors.get(row.severity, "#94a3b8"),
+        }
+        for row in severity_result.all()
+    ]
+
+    return {
+        "machine_failure_data": machine_data,
+        "severity_data": severity_data,
+    }
+

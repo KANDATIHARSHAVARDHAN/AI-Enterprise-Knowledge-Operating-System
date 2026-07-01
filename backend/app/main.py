@@ -3,6 +3,10 @@ EKOS - AI Enterprise Knowledge Operating System
 FastAPI Application Entry Point
 """
 
+import os
+# Fix Windows OpenMP multiple runtime conflict (libiomp5md vs libomp)
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware

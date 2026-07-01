@@ -86,6 +86,14 @@ export const queryService = {
     const res = await api.get(`/query/conversations/${conversationId}/messages`);
     return res.data;
   },
+  getDashboardStats: async () => {
+    const res = await api.get('/query/dashboard-stats');
+    return res.data;
+  },
+  getDocumentAnalytics: async () => {
+    const res = await api.get('/query/document-analytics');
+    return res.data;
+  },
 };
 
 export const documentService = {
@@ -127,6 +135,10 @@ export const adminService = {
   },
   getAuditLogs: async () => {
     const res = await api.get('/admin/audit-logs');
+    return res.data;
+  },
+  getDashboardChartData: async () => {
+    const res = await api.get('/admin/dashboard-data');
     return res.data;
   },
   listUsers: async () => {

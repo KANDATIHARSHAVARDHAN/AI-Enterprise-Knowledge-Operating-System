@@ -58,6 +58,19 @@ class VectorStore:
         vectors = np.array(embeddings, dtype=np.float32)
         faiss.normalize_L2(vectors)
 
+        actual_dim = vectors.shape[1]
+
+        # Ensure index dimension matches actual vector dimension
+        if self.index is None or self.index.d != actual_dim:
+            logger.warning(
+                f"FAISS index dimension mismatch (expected {actual_dim}, "
+                f"got {self.index.d if self.index else 'None'}). Re-initializing index."
+            )
+            self.dimension = actual_dim
+            self.index = faiss.IndexFlatIP(actual_dim)
+            self.metadata = []
+            self.id_map = {}
+
         start_pos = self.index.ntotal
 
         self.index.add(vectors)
@@ -175,8 +188,9 @@ class VectorStore:
 
             self.metadata = data.get("metadata", [])
             self.id_map = data.get("id_map", {})
+            self.dimension = self.index.d
 
-            logger.info(f"Loaded FAISS index ({self.index.ntotal} vectors)")
+            logger.info(f"Loaded FAISS index ({self.index.ntotal} vectors, dim={self.index.d})")
         except Exception as e:
             logger.warning(f"Failed to load FAISS index, creating new: {e}")
             self.index = faiss.IndexFlatIP(self.dimension)

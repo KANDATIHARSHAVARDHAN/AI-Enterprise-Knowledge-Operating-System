@@ -138,6 +138,114 @@ npm start
 | Agent Success Rate | Custom |
 | Tool Selection Accuracy | Custom |
 
+## 🔄 Step-by-Step Execution Flow (Scenario)
+
+To understand how EKOS orchestrates its agent network, let's look at the lifecycle of a single user query:
+
+> **User Query:** *"Why did Machine X (MCH-X001) fail in June 2024 and how much did it cost?"*
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as React Client
+    participant API as FastAPI Gateway
+    participant Plan as Planner Agent
+    participant SQL as SQL Agent
+    participant Ret as Retriever Agent
+    participant KG as KG Agent
+    participant Fact as Fact-Checker Agent
+    participant UI as SSE Output
+
+    User->>API: Submits query
+    Note over API: PII Masking & Prompt Guard scan
+    API->>Plan: Trigger LangGraph Orchestrator
+    Note over Plan: Decomposes query into 3 parallel sub-tasks
+    
+    rect rgb(240, 245, 255)
+        Note over Plan, KG: Parallel Agent Execution
+        Plan->>SQL: Task 1: Find incident logs & costs
+        SQL->>SQL: Generates SELECT queries on MySQL
+        Plan->>Ret: Task 2: Search text docs & emails
+        Ret->>Ret: Runs Hybrid Search (FAISS + BM25)
+        Plan->>KG: Task 3: Map machine topology
+        KG->>KG: Traverses JSON Knowledge Graph
+    end
+
+    SQL-->>Fact: Returns $4,500 cost & 4.5 hrs downtime
+    Ret-->>Fact: Returns email thread mentioning clamp leak at junction B7
+    KG-->>Fact: Returns location (Floor East, Line-3)
+    
+    Note over Fact: Cross-references LLM answer with raw data sources
+    Fact-->>API: Validates response (Confidence: 98%)
+    API-->>User: Streams answer via Server-Sent Events (SSE)
+```
+
+---
+
+## 🏗️ Detailed Project Pipelines & Workflows
+
+### 1. The Multi-Agent Execution Pipeline (LangGraph Workflow)
+The execution of a query follows a strict LangGraph-driven routing process:
+1. **Inbound Security and Sanitization**: The request arrives via `POST /api/query`. The backend runs a Prompt Injection detection middleware and a PII mask filter to replace sensitive values (names, addresses) before sending anything to the LLMs.
+2. **Long-Term Memory Search**: The `MemoryAgent` pulls recent conversation state and user profiles from the MySQL database to add relevant semantic context.
+3. **Structured Plan Generation**: The `PlannerAgent` executes a LLM call to break the user query into component tasks. Each task specifies a target specialist agent (`RETRIEVER`, `SQL_AGENT`, `VISION`, or `GRAPH`) and key instructions.
+4. **Conditional Routing Execution**:
+   - If both unstructured data and structured metrics are needed, the orchestrator routes to the `RetrieverAgent` first, then the `SQLAgent`.
+   - The specialist nodes run their tasks synchronously or in parallel, modifying the shared `AgentState` object.
+5. **Synthesis & Reasoning**: The `ReasoningAgent` gathers the output text logs from the vector database, SQL return values, and knowledge graph relations, building a unified response.
+6. **Double-Verification Quality Loop**:
+   - The `CriticAgent` evaluates the response on relevance, coherence, and accuracy. If the score is below `0.6`, it sends instructions back to the `ReasoningAgent` for a single retry.
+   - The `FactCheckerAgent` parses distinct factual claims and maps them to citations in the retrieved text to ensure no hallucinations occurred.
+7. **Streaming Output Generator**: The `ReportGeneratorAgent` reformats the output into structured plaintext, removes markdown headers/bold signs, appends a dedicated "EVALUATION METRICS" footer, and streams the result to the React UI using Server-Sent Events (SSE).
+
+---
+
+### 2. The Knowledge Graph Pipeline
+The Knowledge Graph in EKOS tracks the physical topology, human operators, and component relationships of the factory floor.
+
+#### Technology Stack & Frameworks
+* **NetworkX (version 3.4.2)**: Used as the core Python library to build and navigate directed graphs (`nx.DiGraph`).
+* **NumPy (version 1.26.4)**: Used for fast matrix computations, statistical metrics, and node/edge type distributions.
+* **JSON File Storage**: The graph is loaded/persisted as a local file (`backend/knowledge_graph.json`).
+
+#### Entity Relationship Schema
+The knowledge graph uses node schemas for:
+* **Machines**: e.g., `MCH-X001` (properties: name, location)
+* **Production Lines**: e.g., `Line-3` (properties: area)
+* **Technicians**: e.g., `Carlos Rodriguez` (properties: specialization)
+* **Parts**: e.g., `SKF-7210` (properties: type, part name)
+
+It implements 10 edge relationship types to connect these nodes:
+* `part_of` (e.g., machine is part of a production line)
+* `maintained_by` (e.g., machine is repaired by a technician)
+* `uses_part` (e.g., machine is configured with a specific part)
+* `caused_by`, `reported_by`, `resolved_by`, `located_in`, `depends_on`, `similar_to`, `related_to`.
+
+#### Execution Workflow in the Pipeline
+1. **Activation**: When the `PlannerAgent` identifies queries referring to parts, locations, maintenance personnel, or dependency relationships, it schedules a `GRAPH` agent sub-task.
+2. **Entity Term Extraction**: The `GraphAgent` extracts terms from the sub-task description (e.g., machine IDs or part names).
+3. **Subgraph Traversal (BFS)**: It searches the `KnowledgeGraph` singleton for matching nodes, then performs a Breadth-First Search (BFS) traversal up to `depth=1` to extract neighboring entities.
+4. **Context Synthesis**: Relationships are serialized (e.g. `MCH-X001 --[uses_part]--> SKF-7210 (bearing)`) and output as `graph_summary`. This string is fed to the reasoning agent to explain mechanical chains-of-failure. The backend also exports the visual subgraph node-link structure to render interactive D3.js topology maps on the React frontend.
+
+---
+
+### 3. Ingestion & Retrieval Synchronization Pipeline
+To search documents reliably, EKOS runs a dual-engine (dense + sparse) synchronization pipeline:
+1. **Document Upload**: Raw files (PDFs, Word, Excel, Email threads) are uploaded through the FastAPI `/api/documents/upload` endpoint.
+2. **Text Extraction**: The ingestion pipeline parses text dynamically using specialized library hooks:
+   - **PyMuPDF (`fitz`)**: For multi-page PDF documents.
+   - **python-docx**: For Word files.
+   - **openpyxl / pandas**: For Excel spreadsheets.
+   - **Pillow & Tesseract OCR**: For image files and scans.
+3. **Recursive Chunking**: Extracted text is split into chunks of `512` characters with `50` characters of overlap to preserve boundaries.
+4. **Vector Embedding (Dense)**: Each chunk is embedded using Google's `models/text-embedding-004` API to produce a 768-dimensional vector, which is saved in a local **FAISS CPU** index.
+5. **Metadata Sync (MySQL)**: File path, ingestion status, size, and page numbers are saved to the MySQL relational table for tracking. The full textual content is saved directly inside the FAISS metadata store.
+6. **BM25 Sync (Sparse)**: When search queries execute, the `SparseRetriever` checks the vector store index. If new documents have been added, it synchronizes the `rank-bm25` index on the fly.
+7. **Hybrid Retrieval with RRF**:
+   - **Dense Search**: Retrieves the top `k` chunks by cosine similarity in the FAISS index.
+   - **Sparse Search**: Retrieves the top `k` chunks using BM25 keyword matching.
+   - **RRF (Reciprocal Rank Fusion)**: Scores are merged using an RRF algorithm, and a cross-encoder model (`cross-encoder/ms-marco-MiniLM-L-6-v2`) reranks the outputs to deliver the top 5 most relevant passages to the LLM.
+
 ---
 
 ## 📁 Project Structure

@@ -54,9 +54,10 @@ class Reranker:
             # Prepare query-document pairs
             pairs = []
             for result in results:
-                doc_text = result.get("metadata", {}).get("content_preview", "")
+                meta = result.get("metadata", {})
+                doc_text = result.get("content") or meta.get("content") or meta.get("content_preview", "")
                 if not doc_text:
-                    doc_text = str(result.get("metadata", ""))
+                    doc_text = str(meta)
                 pairs.append([query, doc_text])
 
             # Score with cross-encoder

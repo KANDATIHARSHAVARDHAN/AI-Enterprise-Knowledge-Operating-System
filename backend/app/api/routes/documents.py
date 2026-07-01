@@ -22,20 +22,30 @@ settings = get_settings()
 
 async def _run_ingestion(file_path: str, document_id: int):
     """Background task for document ingestion."""
+    import traceback
     from app.db.database import async_session_factory
+    from app.utils.logger import logger
+
     pipeline = IngestionPipeline()
     vector_store = get_vector_store()
 
     async with async_session_factory() as db:
         try:
-            await pipeline.ingest_document(file_path, document_id, db, vector_store)
-            await db.commit()
+            result = await pipeline.ingest_document(
+                file_path, document_id, db, vector_store
+            )
+            logger.info(
+                f"Ingestion completed for document {document_id}: "
+                f"{result.get('chunk_count', 0)} chunks"
+            )
         except Exception as e:
-            doc = await db.get(Document, document_id)
-            if doc:
-                doc.status = "failed"
-                doc.error_message = str(e)
-                await db.commit()
+            # The pipeline already sets doc.status = "failed" and commits
+            # on error internally. Only log the outer exception here to
+            # avoid double-commit / session-state conflicts.
+            logger.error(
+                f"Background ingestion failed for document {document_id}: {e}\n"
+                f"{traceback.format_exc()}"
+            )
 
 
 @router.post("/upload")
@@ -112,13 +122,19 @@ async def list_documents(
     skip: int = 0,
     limit: int = 50,
 ):
-    """List all documents."""
-    result = await db.execute(
-        select(Document).order_by(Document.created_at.desc()).offset(skip).limit(limit)
-    )
+    """List documents. Non-admin users see only their own documents."""
+    query = select(Document).order_by(Document.created_at.desc())
+    count_query = select(func.count(Document.id))
+
+    # Per-user isolation: non-admins see only their own documents
+    if current_user.role != "admin":
+        query = query.where(Document.uploaded_by == current_user.id)
+        count_query = count_query.where(Document.uploaded_by == current_user.id)
+
+    result = await db.execute(query.offset(skip).limit(limit))
     documents = result.scalars().all()
 
-    count_result = await db.execute(select(func.count(Document.id)))
+    count_result = await db.execute(count_query)
     total = count_result.scalar()
 
     return {
@@ -148,10 +164,13 @@ async def get_document(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get document details."""
+    """Get document details. Ownership check for non-admin users."""
     doc = await db.get(Document, document_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+
+    if current_user.role != "admin" and doc.uploaded_by != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     return {
         "id": doc.id,
@@ -172,10 +191,13 @@ async def delete_document(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Delete a document and its chunks."""
+    """Delete a document and its chunks. Ownership check for non-admin users."""
     doc = await db.get(Document, document_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+
+    if current_user.role != "admin" and doc.uploaded_by != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     # Delete file from disk
     try:
@@ -211,9 +233,14 @@ async def get_document_chunks(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     skip: int = 0,
-    limit: int = 20,
 ):
-    """View chunks of a document."""
+    """View chunks of a document. Ownership check for non-admin users."""
+    doc = await db.get(Document, document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if current_user.role != "admin" and doc.uploaded_by != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    limit = 20
     result = await db.execute(
         select(DocumentChunk)
         .where(DocumentChunk.document_id == document_id)

@@ -6,11 +6,11 @@ Handles question asking, streaming responses, and query history.
 import time
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 from pydantic import BaseModel
 from typing import Optional
 from app.db.database import get_db
-from app.db.models import User, Conversation, Message, QueryLog, AuditLog
+from app.db.models import User, Conversation, Message, QueryLog, AuditLog, Document
 from app.api.dependencies import get_current_user
 from app.agents.orchestrator import AgentOrchestrator
 from app.security.prompt_guard import get_prompt_guard
@@ -255,4 +255,183 @@ async def get_conversation_messages(
             }
             for msg in messages
         ],
+    }
+
+
+@router.get("/dashboard-stats")
+async def get_dashboard_stats(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get per-user dashboard statistics.
+    Returns the current user's document count, query count, and recent query history.
+    Accessible to all logged-in users (not admin-only).
+    """
+    # Count user's documents
+    doc_count_result = await db.execute(
+        select(func.count(Document.id))
+        .where(Document.uploaded_by == current_user.id)
+    )
+    doc_count = doc_count_result.scalar() or 0
+
+    # Count user's queries
+    query_count_result = await db.execute(
+        select(func.count(QueryLog.id))
+        .where(QueryLog.user_id == current_user.id)
+    )
+    query_count = query_count_result.scalar() or 0
+
+    # Count user's conversations
+    conv_count_result = await db.execute(
+        select(func.count(Conversation.id))
+        .where(Conversation.user_id == current_user.id)
+    )
+    conv_count = conv_count_result.scalar() or 0
+
+    # Count user's document chunks (approximate vector count)
+    from app.db.models import DocumentChunk
+    chunk_count_result = await db.execute(
+        select(func.count(DocumentChunk.id))
+        .join(Document, DocumentChunk.document_id == Document.id)
+        .where(Document.uploaded_by == current_user.id)
+    )
+    chunk_count = chunk_count_result.scalar() or 0
+
+    # Average latency
+    avg_latency_result = await db.execute(
+        select(func.avg(QueryLog.latency_ms))
+        .where(QueryLog.user_id == current_user.id)
+    )
+    avg_latency = avg_latency_result.scalar() or 0
+
+    return {
+        "user_id": current_user.id,
+        "username": current_user.username,
+        "role": current_user.role,
+        "documents": doc_count,
+        "queries": query_count,
+        "conversations": conv_count,
+        "vector_count": chunk_count,
+        "avg_latency_ms": round(float(avg_latency), 1),
+    }
+
+
+@router.get("/document-analytics")
+async def get_document_analytics(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get document-driven analytics for the dashboard charts.
+    Returns file type distribution, status breakdown, upload timeline,
+    and top documents by chunk count.
+    Admin users see all documents; non-admin users see only their own.
+    """
+    from app.db.models import DocumentChunk
+
+    # Build the ownership filter
+    ownership_filter = (
+        True  # admin sees everything
+        if current_user.role == "admin"
+        else (Document.uploaded_by == current_user.id)
+    )
+
+    # 1. File type distribution (for bar/pie chart)
+    file_type_result = await db.execute(
+        select(
+            Document.file_type,
+            func.count(Document.id).label("count"),
+            func.coalesce(func.sum(Document.file_size_bytes), 0).label("total_size"),
+        )
+        .where(ownership_filter)
+        .group_by(Document.file_type)
+        .order_by(desc(func.count(Document.id)))
+    )
+    file_type_data = [
+        {
+            "name": row.file_type.upper() if row.file_type else "UNKNOWN",
+            "count": row.count,
+            "total_size": int(row.total_size),
+        }
+        for row in file_type_result.all()
+    ]
+
+    # 2. Document status breakdown (for pie chart)
+    status_result = await db.execute(
+        select(
+            Document.status,
+            func.count(Document.id).label("value"),
+        )
+        .where(ownership_filter)
+        .group_by(Document.status)
+    )
+    status_colors = {
+        "completed": "#22d3ee",
+        "processing": "#fbbf24",
+        "pending": "#94a3b8",
+        "failed": "#f87171",
+    }
+    status_data = [
+        {
+            "name": (row.status or "unknown").capitalize(),
+            "value": row.value,
+            "color": status_colors.get(row.status, "#64748b"),
+        }
+        for row in status_result.all()
+    ]
+
+    # 3. Upload timeline — documents per day (for area chart)
+    timeline_result = await db.execute(
+        select(
+            func.date(Document.created_at).label("upload_date"),
+            func.count(Document.id).label("count"),
+            func.coalesce(func.sum(Document.chunk_count), 0).label("chunks"),
+        )
+        .where(ownership_filter)
+        .group_by(func.date(Document.created_at))
+        .order_by(func.date(Document.created_at))
+    )
+    upload_timeline = [
+        {
+            "date": str(row.upload_date) if row.upload_date else "",
+            "documents": row.count,
+            "chunks": int(row.chunks),
+        }
+        for row in timeline_result.all()
+    ]
+
+    # 4. Top documents by chunk count (for bar chart)
+    top_docs_result = await db.execute(
+        select(
+            Document.original_filename,
+            Document.file_type,
+            Document.chunk_count,
+            Document.file_size_bytes,
+        )
+        .where(ownership_filter)
+        .where(Document.status == "completed")
+        .where(Document.chunk_count > 0)
+        .order_by(desc(Document.chunk_count))
+        .limit(10)
+    )
+    top_docs_data = [
+        {
+            "name": (
+                row.original_filename[:25] + "..."
+                if len(row.original_filename or "") > 25
+                else row.original_filename
+            ),
+            "chunks": row.chunk_count or 0,
+            "size_kb": round((row.file_size_bytes or 0) / 1024, 1),
+            "file_type": (row.file_type or "").upper(),
+        }
+        for row in top_docs_result.all()
+    ]
+
+    return {
+        "file_type_data": file_type_data,
+        "status_data": status_data,
+        "upload_timeline": upload_timeline,
+        "top_docs_data": top_docs_data,
     }

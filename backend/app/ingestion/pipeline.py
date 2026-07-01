@@ -137,6 +137,7 @@ class IngestionPipeline:
                         "document_id": document_id,
                         "embedding_id": embedding_ids[i],
                         "source": chunks[i]["metadata"].get("source", ""),
+                        "content": chunks[i]["content"],
                         "content_preview": chunks[i]["content"][:200],
                     }
                     for i in range(len(chunks))
@@ -165,13 +166,19 @@ class IngestionPipeline:
 
         except Exception as e:
             # Update document status to failed
-            if doc:
-                doc.status = "failed"
-                doc.error_message = str(e)
-                await db.commit()
+            try:
+                doc = await db.get(Document, document_id)
+                if doc:
+                    doc.status = "failed"
+                    doc.error_message = str(e)[:1000]
+                    await db.commit()
+            except Exception as commit_err:
+                logger.error(f"Failed to update document status: {commit_err}")
 
             logger.error(f"Ingestion failed for {path.name}: {e}")
-            raise IngestionError(str(e), filename=path.name)
+            # Raise RuntimeError (not IngestionError) so the caller knows
+            # the DB error status has already been committed.
+            raise RuntimeError(f"Ingestion failed for {path.name}: {e}") from e
 
     @staticmethod
     def get_supported_extensions() -> list[str]:

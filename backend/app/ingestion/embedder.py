@@ -37,11 +37,14 @@ class DocumentEmbedder:
             List of floats (768-dimensional vector)
         """
         try:
-            result = genai.embed_content(
-                model=self.model_name,
-                content=text,
-                task_type="retrieval_document",
-            )
+            kwargs = {
+                "model": self.model_name,
+                "content": text,
+                "task_type": "retrieval_document",
+            }
+            if self.dimension:
+                kwargs["output_dimensionality"] = self.dimension
+            result = genai.embed_content(**kwargs)
             return result["embedding"]
         except Exception as e:
             logger.error(f"Embedding generation failed: {e}")
@@ -64,11 +67,14 @@ class DocumentEmbedder:
             List of floats (768-dimensional vector)
         """
         try:
-            result = genai.embed_content(
-                model=self.model_name,
-                content=query,
-                task_type="retrieval_query",
-            )
+            kwargs = {
+                "model": self.model_name,
+                "content": query,
+                "task_type": "retrieval_query",
+            }
+            if self.dimension:
+                kwargs["output_dimensionality"] = self.dimension
+            result = genai.embed_content(**kwargs)
             return result["embedding"]
         except Exception as e:
             logger.error(f"Query embedding failed: {e}")
@@ -92,11 +98,14 @@ class DocumentEmbedder:
             batch = texts[i:i + batch_size]
 
             try:
-                result = genai.embed_content(
-                    model=self.model_name,
-                    content=batch,
-                    task_type="retrieval_document",
-                )
+                kwargs = {
+                    "model": self.model_name,
+                    "content": batch,
+                    "task_type": "retrieval_document",
+                }
+                if self.dimension:
+                    kwargs["output_dimensionality"] = self.dimension
+                result = genai.embed_content(**kwargs)
                 all_embeddings.extend(result["embedding"])
                 logger.info(f"Embedded batch {i // batch_size + 1} ({len(batch)} texts)")
             except Exception as e:

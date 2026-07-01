@@ -187,7 +187,6 @@ def get_chat_model(
 
     Returns:
         ChatGroq instance
-    ```
     """
     settings = get_settings()
     model = model_name or settings.groq_model_large
