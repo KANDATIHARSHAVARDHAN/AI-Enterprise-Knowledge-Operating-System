@@ -5,7 +5,7 @@ Handles question asking, streaming responses, and query history.
 
 import time
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from app.db.database import get_db
 from app.api.dependencies import get_current_user
@@ -20,7 +20,7 @@ settings = get_settings()
 
 
 class QueryRequest(BaseModel):
-    query: str
+    query: str = Field(..., min_length=1)
     conversation_id: Optional[int] = None
 
 
