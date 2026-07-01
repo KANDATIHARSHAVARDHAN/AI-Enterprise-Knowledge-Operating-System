@@ -90,7 +90,7 @@ async def _ask_firestore(request, current_user, masked_query, start_time, db):
             raise HTTPException(status_code=404, detail="Conversation not found")
 
     # Save user message
-    user_msg = await fs.create_message({
+    await fs.create_message({
         "conversation_id": conversation_id,
         "role": "user",
         "content": request.query,
@@ -601,7 +601,7 @@ async def get_document_analytics(
 
     else:
         from sqlalchemy import select, func, desc
-        from app.db.models import Document, DocumentChunk
+        from app.db.models import Document
 
         ownership_filter = (
             True if current_user.role == "admin"
