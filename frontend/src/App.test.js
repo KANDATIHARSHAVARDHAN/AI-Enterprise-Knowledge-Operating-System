@@ -6,7 +6,7 @@ jest.mock('react-router-dom', () => ({
   Routes: ({ children }) => <div>{children}</div>,
   Route: ({ element }) => element,
   Navigate: () => null,
-}));
+}), { virtual: true });
 
 test('renders the application without crashing', () => {
   const { container } = render(<App />);
