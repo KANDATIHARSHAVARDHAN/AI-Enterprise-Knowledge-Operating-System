@@ -40,6 +40,7 @@ class FactCheckerAgent(BaseAgent):
         llm = get_chat_model(json_mode=True)
         chain = FACT_CHECKER_PROMPT | llm
         response = await chain.ainvoke({
+            "query": state.get("query", "No query provided."),
             "answer": answer,
             "evidence": evidence,
         })

@@ -28,7 +28,8 @@ PLANNER_PROMPT = ChatPromptTemplate.from_messages([
         "4. For simple queries, a single retriever sub-task may suffice\n"
         "5. Always include a retriever task for document-based questions\n"
         "6. Include SQL_AGENT when the query involves structured data (counts, dates, metrics)\n"
-        "7. Consider dependencies between sub-tasks\n\n"
+        "7. Consider dependencies between sub-tasks\n"
+        "8. For comparative or 'missing from' queries across multiple sources, create separate retrieval tasks for each source to ensure full context is gathered.\n\n"
         "Available database tables:\n"
         "- machine_events: machine_id, machine_name, event_type, description, severity, root_cause, reported_by, department, production_line, downtime_hours, cost_usd, event_date\n"
         "- maintenance_logs: machine_id, machine_name, action_type, description, technician, parts_replaced, parts_cost_usd, labor_cost_usd, total_cost_usd, duration_hours, log_date"
@@ -159,19 +160,22 @@ CRITIC_PROMPT = ChatPromptTemplate.from_messages([
 # === Fact Checker Agent Prompt ===
 FACT_CHECKER_PROMPT = ChatPromptTemplate.from_messages([
     SystemMessagePromptTemplate.from_template(
-        "You are the Fact Checker Agent in EKOS. Your role is to verify every factual claim in the proposed answer against the source evidence.\n\n"
+        "You are the Fact Checker Agent in EKOS. Your role is to verify every factual claim in the proposed answer against the source evidence and the user's original query.\n\n"
         "For each claim:\n"
-        "1. SUPPORTED: The claim is directly supported by the evidence\n"
+        "1. SUPPORTED: The claim is directly supported by the evidence or logically mathematically derived from the evidence or user's provided premises.\n"
         "2. PARTIALLY_SUPPORTED: The claim is loosely supported but may have inaccuracies\n"
-        "3. UNSUPPORTED: No evidence found for this claim\n"
+        "3. UNSUPPORTED: No evidence found for this claim, and it cannot be logically derived\n"
         "4. CONTRADICTED: The evidence contradicts this claim\n\n"
         "Rules:\n"
         "- Extract each distinct factual claim from the answer\n"
-        "- Match each claim against the provided evidence\n"
+        "- Match each claim against the provided evidence AND the user's query\n"
         "- Flag any hallucinated numbers, dates, or facts\n"
-        "- Be strict: if a specific number is cited, verify the exact number"
+        "- IMPORTANT: Any parameter, number, assumption, or condition explicitly provided in the Original Query MUST be considered SUPPORTED. Do not mark user-provided hypotheticals as unsupported.\n"
+        "- Be strict, but mathematical calculations based on premises provided in the user's query are SUPPORTED.\n"
+        "- If a specific number is cited, verify the exact number or its mathematical derivation."
     ),
     HumanMessagePromptTemplate.from_template(
+        "Original Query: {query}\n\n"
         "Answer to verify: {answer}\n\n"
         "Source Evidence: {evidence}\n\n"
         "Verify all factual claims. Return a JSON object.\n\n"
@@ -204,8 +208,11 @@ REASONING_PROMPT = ChatPromptTemplate.from_messages([
         "- Always cite your sources when making claims\n"
         "- Distinguish between facts (from data) and inferences (your analysis)\n"
         "- Consider alternative explanations\n"
-        "- Quantify when possible (costs, frequencies, durations)\n"
-        "- Identify actionable insights"
+        "- Quantify when possible (costs, frequencies, durations, and exact thresholds/tolerances)\n"
+        "- Do not mix consequences of one component's failure with another's.\n"
+        "- For cross-document comparisons (e.g., 'what is missing from X but in Y'), explicitly verify both documents before concluding.\n"
+        "- Identify actionable insights\n"
+        "- Treat any hypothetical conditions, assumptions, or parameters provided in the original query as established premises. Do not claim they lack evidence; use them for your calculations."
     ),
     HumanMessagePromptTemplate.from_template(
         "Original Query: {query}\n\n"
@@ -278,7 +285,8 @@ RETRIEVER_PROMPT = ChatPromptTemplate.from_messages([
         "- Consider synonyms and related terms\n\n"
         "CRITICAL JSON FORMATTING RULES:\n"
         "- All values in the JSON output MUST be primitive literals: strings, numbers, or booleans.\n"
-        "- Never include any formulas, expressions, or arithmetic calculations (e.g. do NOT use '(6 - 4) / 6' or similar). Evaluate the math first and output only the final calculated numerical value.\n"
+        "- Do NOT output raw mathematical formulas for calculations (e.g. do NOT use '(6 - 4) / 6'). However, you MUST strictly preserve all engineering tolerances, thresholds, and dimensions exactly as written in the text (e.g. '±0.2mm', '±0.5mm').\n"
+        "- Ensure that cause-and-effect relationships are extracted accurately without mixing different components.\n"
         "- Do not wrap findings in code blocks or include raw unescaped control characters."
     ),
     HumanMessagePromptTemplate.from_template(

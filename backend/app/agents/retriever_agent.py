@@ -48,26 +48,75 @@ class RetrieverAgent(BaseAgent):
         expanded_queries = []
         for sq in search_queries:
             rewritten = await self.query_rewriter.rewrite(sq)
-            expanded_queries.extend(rewritten)
-
+            for r in rewritten:
+                if isinstance(r, dict):
+                    # Extract string from dict if LLM returned structured objects
+                    for val in r.values():
+                        if isinstance(val, str):
+                            expanded_queries.append(val)
+                            break
+                elif isinstance(r, str):
+                    expanded_queries.append(r)
         # Deduplicate
         expanded_queries = list(dict.fromkeys(expanded_queries))
 
-        # Retrieve documents for all queries
-        all_results = []
+        # Retrieve documents for all queries (Initial Hop)
+        initial_results = []
         seen_keys = set()
 
-        for search_query in expanded_queries[:5]:  # Limit to 5 queries
+        for search_query in expanded_queries[:3]:  # Limit to 3 queries to save latency
             results = self.retriever.retrieve(search_query, top_k=self.settings.top_k_retrieval)
             for r in results:
                 key = r.get("metadata", {}).get("embedding_id", str(r.get("metadata", "")))
                 if key not in seen_keys:
                     seen_keys.add(key)
-                    all_results.append(r)
+                    initial_results.append(r)
+
+        # Multi-hop retrieval analysis
+        hop_queries = []
+        if initial_results:
+            try:
+                snippets_preview = "\n".join([
+                    f"- {r.get('metadata', {}).get('source', 'Unknown')}: {r.get('content') or r.get('metadata', {}).get('content') or r.get('metadata', {}).get('content_preview', '')[:250]}..."
+                    for r in initial_results[:5]
+                ])
+                llm = get_chat_model(json_mode=True)
+                messages = [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are an advanced RAG retrieval controller. Analyze the user's query and the initially retrieved chunks.\n"
+                            "Determine if the query asks about a relationship, follow-up event, corrective action, or reference that is mentioned in the chunks but whose details are missing from the chunks.\n"
+                            "If details are missing, generate 1-2 specific search queries to retrieve those missing details.\n"
+                            "Example: If query asks about 'corrective action of the linked previous incident' and chunks mention 'July 10 sync error' but not its action, generate: ['July 10 shuttle table sync error corrective action'].\n"
+                            "Return a JSON object: {\"queries\": [\"query1\"]} or {\"queries\": []} if no extra queries are needed."
+                        )
+                    },
+                    {
+                        "role": "user",
+                        "content": f"User Query: {query}\n\nInitially Retrieved Chunks:\n{snippets_preview}"
+                    }
+                ]
+                response = await llm.ainvoke(messages)
+                hop_data = json.loads(response.content)
+                hop_queries = hop_data.get("queries", [])
+            except Exception as e:
+                logger.warning(f"Multi-hop query generation failed: {e}")
+
+        # Perform second-hop retrieval if needed
+        all_results = list(initial_results)
+        if hop_queries:
+            logger.info(f"Multi-hop retrieval triggered with queries: {hop_queries}")
+            for hq in hop_queries:
+                results = self.retriever.retrieve(hq, top_k=self.settings.top_k_retrieval)
+                for r in results:
+                    key = r.get("metadata", {}).get("embedding_id", str(r.get("metadata", "")))
+                    if key not in seen_keys:
+                        seen_keys.add(key)
+                        all_results.append(r)
 
         # Rerank combined results
         reranked = self.reranker.rerank(query, all_results, top_k=self.settings.top_k_rerank)
-
         # Analyze results with LLM
         chunks_text = "\n\n---\n\n".join([
             f"[Source: {r.get('metadata', {}).get('source', 'Unknown')}]\n"

@@ -51,6 +51,8 @@ class DocumentChunker:
                 texts = self._sentence_split(content)
             elif strategy == "fixed":
                 texts = self._fixed_split(content)
+            elif strategy == "markdown":
+                texts = self._markdown_split(content)
             else:
                 texts = self._recursive_split(content)
 
@@ -83,38 +85,84 @@ class DocumentChunker:
         - Collapse multiple spaces into one
         - Strip trailing whitespace per line
         """
-        # Replace tabs with spaces
         text = text.replace("\t", " ")
-        # Collapse 3+ consecutive newlines into exactly 2
         text = re.sub(r"\n{3,}", "\n\n", text)
-        # Collapse multiple spaces into one (but preserve newlines)
         text = re.sub(r"[^\S\n]+", " ", text)
-        # Strip trailing whitespace on each line
         text = "\n".join(line.rstrip() for line in text.split("\n"))
         return text.strip()
 
-    def _recursive_split(self, text: str) -> list[str]:
+    def _markdown_split(self, text: str) -> list[str]:
+        """
+        Split markdown text by headers, keeping sections together.
+        Prepends the header context to each chunk to preserve meaning.
+        """
+        lines = text.split('\n')
+        blocks = []
+        current_context = []
+        current_block_lines = []
+
+        for line in lines:
+            header_match = re.match(r'^(#+)\s+(.*)', line)
+            if header_match:
+                if current_block_lines:
+                    content = "\n".join(current_block_lines).strip()
+                    if content:
+                        context_str = " > ".join(current_context)
+                        blocks.append((context_str, content))
+                    current_block_lines = []
+                
+                level = len(header_match.group(1))
+                header_text = header_match.group(2).strip()
+                
+                if level <= len(current_context):
+                    current_context = current_context[:level-1]
+                current_context.append(header_text)
+                current_block_lines.append(line)
+            else:
+                current_block_lines.append(line)
+                
+        if current_block_lines:
+            content = "\n".join(current_block_lines).strip()
+            if content:
+                context_str = " > ".join(current_context)
+                blocks.append((context_str, content))
+                
+        final_chunks = []
+        for context_str, content in blocks:
+            context_prefix = f"[Context: {context_str}]\n" if context_str else ""
+            
+            if len(context_prefix) + len(content) <= self.chunk_size:
+                final_chunks.append(context_prefix + content)
+            else:
+                reduced_size = max(50, self.chunk_size - len(context_prefix))
+                sub_chunks = self._recursive_split(content, max_size=reduced_size)
+                for sc in sub_chunks:
+                    final_chunks.append(context_prefix + sc)
+                    
+        return final_chunks
+
+    def _recursive_split(self, text: str, max_size: Optional[int] = None) -> list[str]:
         """
         Recursively split text using hierarchical separators.
         Tries to keep semantically related text together.
         Overlap is applied ONLY here (top level), not inside the recursive calls.
         """
+        target_size = max_size or self.chunk_size
         separators = ["\n\n", "\n", ". ", "! ", "? ", "; ", ", ", " "]
-        chunks = self._split_by_separators(text, separators)
+        chunks = self._split_by_separators(text, separators, target_size)
 
-        # Apply overlap ONCE at top level only
         if self.chunk_overlap > 0 and len(chunks) > 1:
             chunks = self._apply_overlap(chunks)
 
         return chunks
 
-    def _split_by_separators(self, text: str, separators: list[str]) -> list[str]:
+    def _split_by_separators(self, text: str, separators: list[str], target_size: int) -> list[str]:
         """
         Split text using the first applicable separator.
         Preserves the separator at the end of the preceding segment
         so sentence-ending punctuation is not lost.
         """
-        if len(text) <= self.chunk_size:
+        if len(text) <= target_size:
             return [text] if text.strip() else []
 
         separator = separators[0] if separators else " "
@@ -151,13 +199,13 @@ class DocumentChunker:
             else:
                 candidate = part
 
-            if len(candidate) <= self.chunk_size:
+            if len(candidate) <= target_size:
                 current_chunk = candidate
             else:
                 if current_chunk:
-                    if len(current_chunk) > self.chunk_size and remaining_separators:
+                    if len(current_chunk) > target_size and remaining_separators:
                         sub_chunks = self._split_by_separators(
-                            current_chunk, remaining_separators
+                            current_chunk, remaining_separators, target_size
                         )
                         chunks.extend(sub_chunks)
                     else:
@@ -166,9 +214,9 @@ class DocumentChunker:
                 current_chunk = part
 
         if current_chunk:
-            if len(current_chunk) > self.chunk_size and remaining_separators:
+            if len(current_chunk) > target_size and remaining_separators:
                 sub_chunks = self._split_by_separators(
-                    current_chunk, remaining_separators
+                    current_chunk, remaining_separators, target_size
                 )
                 chunks.extend(sub_chunks)
             else:
@@ -215,7 +263,7 @@ class DocumentChunker:
     def _apply_overlap(self, chunks: list[str]) -> list[str]:
         """
         Add overlap between consecutive chunks.
-        Finds the nearest word boundary instead of cutting mid-word.
+        Finds the nearest sentence boundary instead of cutting mid-word.
         """
         if not chunks:
             return chunks
@@ -227,17 +275,30 @@ class DocumentChunker:
             if len(prev_chunk) <= self.chunk_overlap:
                 overlap_text = prev_chunk
             else:
-                # Take roughly chunk_overlap chars from the end
-                raw_overlap = prev_chunk[-self.chunk_overlap:]
-                # Walk forward to the nearest word boundary (space)
-                space_idx = raw_overlap.find(" ")
-                if space_idx != -1 and space_idx < len(raw_overlap) - 1:
-                    # Start from the word after the space
-                    overlap_text = raw_overlap[space_idx + 1:]
+                # Take roughly (chunk_overlap * 1.5) chars from the end to look for a sentence boundary
+                search_size = int(self.chunk_overlap * 1.5)
+                raw_overlap = prev_chunk[-search_size:] if search_size < len(prev_chunk) else prev_chunk
+                
+                # Try to find a sentence boundary
+                import re
+                match = re.search(r'([.!?]\s+|\n+)', raw_overlap)
+                if match:
+                    overlap_text = raw_overlap[match.end():].strip()
+                    # If it's still way too long, fall back to word boundary near chunk_overlap
+                    if len(overlap_text) > self.chunk_overlap * 1.2:
+                        fallback = prev_chunk[-self.chunk_overlap:]
+                        space_idx = fallback.find(" ")
+                        overlap_text = fallback[space_idx + 1:] if space_idx != -1 else fallback
                 else:
-                    overlap_text = raw_overlap
+                    # Fallback to word boundary
+                    fallback = prev_chunk[-self.chunk_overlap:]
+                    space_idx = fallback.find(" ")
+                    overlap_text = fallback[space_idx + 1:] if space_idx != -1 else fallback
 
-            overlapped.append(overlap_text + " " + chunks[i])
+            if overlap_text:
+                overlapped.append(overlap_text + " " + chunks[i])
+            else:
+                overlapped.append(chunks[i])
 
         return overlapped
 

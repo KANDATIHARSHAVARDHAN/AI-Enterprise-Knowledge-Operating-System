@@ -4,8 +4,6 @@ Verifies connectivity to all backend services.
 """
 
 from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
 from app.db.database import get_db
 from app.db.vector_store import get_vector_store
 from app.config import get_settings
@@ -14,17 +12,37 @@ router = APIRouter(tags=["Health"])
 
 
 @router.get("/api/health")
-async def health_check(db: AsyncSession = Depends(get_db)):
+async def health_check(db=Depends(get_db)):
     """Check health of all backend services."""
     settings = get_settings()
     checks = {}
 
-    # MySQL check
+    # Database check (MySQL or Firestore)
     try:
-        await db.execute(text("SELECT 1"))
-        checks["mysql"] = {"status": "healthy", "host": settings.mysql_host}
+        if settings.database_provider == "firestore":
+            from app.db.firestore_db import get_firestore_client
+            client = get_firestore_client()
+            if client is None:
+                raise ValueError("Firestore client could not be initialized (invalid or missing credentials)")
+            checks["database"] = {
+                "status": "healthy",
+                "provider": "firestore",
+                "project": settings.firebase_project_id,
+            }
+        else:
+            from sqlalchemy import text
+            await db.execute(text("SELECT 1"))
+            checks["database"] = {
+                "status": "healthy",
+                "provider": "mysql",
+                "host": settings.mysql_host,
+            }
     except Exception as e:
-        checks["mysql"] = {"status": "unhealthy", "error": str(e)}
+        checks["database"] = {
+            "status": "unhealthy",
+            "provider": settings.database_provider,
+            "error": str(e),
+        }
 
     # FAISS check
     try:
@@ -32,6 +50,7 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         checks["faiss"] = {
             "status": "healthy",
             "total_vectors": vs.total_vectors,
+            "cloud_sync": settings.database_provider == "firestore",
         }
     except Exception as e:
         checks["faiss"] = {"status": "unhealthy", "error": str(e)}
@@ -59,5 +78,6 @@ async def health_check(db: AsyncSession = Depends(get_db)):
     return {
         "status": overall,
         "version": settings.app_version,
+        "environment": "production" if settings.database_provider == "firestore" else "development",
         "checks": checks,
     }

@@ -103,7 +103,7 @@ class IngestionPipeline:
             logger.info(f"Parsed {len(pages)} pages from {path.name}")
 
             # Step 2: Chunk the document
-            chunks = self.chunker.chunk_documents(pages, strategy="recursive")
+            chunks = self.chunker.chunk_documents(pages, strategy="markdown")
             logger.info(f"Created {len(chunks)} chunks from {path.name}")
 
             # Step 3: Generate embeddings

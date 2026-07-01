@@ -31,12 +31,25 @@ class Settings(BaseSettings):
     embedding_model: str = "models/text-embedding-004"
     embedding_dimension: int = 768
 
+    # === Database Provider ===
+    database_provider: str = "mysql"  # 'mysql' or 'firestore'
+
     # === MySQL ===
     mysql_host: str = "localhost"
     mysql_port: int = 3306
     mysql_user: str = "root"
     mysql_password: str = ""
     mysql_database: str = "ekos_db"
+
+    # === Firebase ===
+    firebase_project_id: str = ""
+    firebase_credentials_path: str = "firebase-credentials.json"
+    firebase_storage_bucket: str = ""
+
+    # === Pinecone ===
+    pinecone_api_key: str = ""
+    pinecone_index_name: str = ""
+
 
     # === JWT ===
     jwt_secret_key: str = "your-super-secret-jwt-key-change-this-in-production"

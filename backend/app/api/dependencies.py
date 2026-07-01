@@ -4,19 +4,19 @@ Shared dependencies for FastAPI route handlers.
 """
 
 from fastapi import Depends, Header
-from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_db
-from app.db.models import User
+from app.config import get_settings
 from app.security.auth import verify_token
 from app.utils.exceptions import AuthenticationError
-from sqlalchemy import select
 from typing import Optional
+
+settings = get_settings()
 
 
 async def get_current_user(
     authorization: Optional[str] = Header(None),
-    db: AsyncSession = Depends(get_db),
-) -> User:
+    db=Depends(get_db),
+):
     """Extract and verify the current user from JWT token."""
     if not authorization:
         raise AuthenticationError("Missing Authorization header")
@@ -33,8 +33,15 @@ async def get_current_user(
     if not user_id:
         raise AuthenticationError("Invalid token: missing user ID")
 
-    result = await db.execute(select(User).where(User.id == int(user_id)))
-    user = result.scalar_one_or_none()
+    if settings.database_provider == "firestore":
+        # Firestore: use the session's get() method
+        user = await db.get(_get_user_model(), int(user_id))
+    else:
+        # MySQL: use SQLAlchemy select
+        from sqlalchemy import select
+        from app.db.models import User
+        result = await db.execute(select(User).where(User.id == int(user_id)))
+        user = result.scalar_one_or_none()
 
     if not user:
         raise AuthenticationError("User not found")
@@ -47,8 +54,8 @@ async def get_current_user(
 
 async def get_optional_user(
     authorization: Optional[str] = Header(None),
-    db: AsyncSession = Depends(get_db),
-) -> Optional[User]:
+    db=Depends(get_db),
+):
     """Get current user if authenticated, None otherwise."""
     if not authorization:
         return None
@@ -56,3 +63,13 @@ async def get_optional_user(
         return await get_current_user(authorization=authorization, db=db)
     except AuthenticationError:
         return None
+
+
+def _get_user_model():
+    """Return the correct User model class based on database provider."""
+    if settings.database_provider == "firestore":
+        from app.db.firestore_db import User
+        return User
+    else:
+        from app.db.models import User
+        return User

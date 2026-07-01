@@ -238,12 +238,12 @@ To search documents reliably, EKOS runs a dual-engine (dense + sparse) synchroni
    - **openpyxl / pandas**: For Excel spreadsheets.
    - **Pillow & Tesseract OCR**: For image files and scans.
 3. **Recursive Chunking**: Extracted text is split into chunks of `512` characters with `50` characters of overlap to preserve boundaries.
-4. **Vector Embedding (Dense)**: Each chunk is embedded using Google's `models/text-embedding-004` API to produce a 768-dimensional vector, which is saved in a local **FAISS CPU** index.
-5. **Metadata Sync (MySQL)**: File path, ingestion status, size, and page numbers are saved to the MySQL relational table for tracking. The full textual content is saved directly inside the FAISS metadata store.
-6. **BM25 Sync (Sparse)**: When search queries execute, the `SparseRetriever` checks the vector store index. If new documents have been added, it synchronizes the `rank-bm25` index on the fly.
+4. **Vector Embedding (Dense)**: Each chunk is embedded using Google's `models/text-embedding-004` API to produce a 768-dimensional vector, which is uploaded to **Pinecone Cloud** via LangChain's `PineconeVectorStore` wrapper.
+5. **Metadata Sync (Firestore)**: File path, ingestion status, size, and page numbers are saved to Cloud Firestore for tracking. A backup copy of vector metadata is also stored in Firestore under a unified cache collection.
+6. **BM25 Sync (Sparse)**: When search queries execute, the `SparseRetriever` checks the local metadata cache. If new documents have been added, it synchronizes the `rank-bm25` index on the fly.
 7. **Hybrid Retrieval with RRF**:
-   - **Dense Search**: Retrieves the top `k` chunks by cosine similarity in the FAISS index.
-   - **Sparse Search**: Retrieves the top `k` chunks using BM25 keyword matching.
+   - **Dense Search**: Retrieves the top `k` chunks by cosine similarity from the **Pinecone Cloud** index.
+   - **Sparse Search**: Retrieves the top `k` chunks using local BM25 keyword matching.
    - **RRF (Reciprocal Rank Fusion)**: Scores are merged using an RRF algorithm, and a cross-encoder model (`cross-encoder/ms-marco-MiniLM-L-6-v2`) reranks the outputs to deliver the top 5 most relevant passages to the LLM.
 
 ---

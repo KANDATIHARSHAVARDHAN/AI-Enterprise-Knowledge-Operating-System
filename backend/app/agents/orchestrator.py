@@ -205,7 +205,12 @@ class AgentOrchestrator:
         return await self._safe_run_agent(self.reasoning_agent, state)
 
     async def _run_critic(self, state: AgentState) -> AgentState:
-        return await self._safe_run_agent(self.critic_agent, state)
+        result_state = await self._safe_run_agent(self.critic_agent, state)
+        critic_result = result_state.get("critic_result", {})
+        if not critic_result.get("passed", True):
+            retry_count = state.get("retry_count", 0)
+            result_state["retry_count"] = retry_count + 1
+        return result_state
 
     async def _run_fact_checker(self, state: AgentState) -> AgentState:
         return await self._safe_run_agent(self.fact_checker, state)
@@ -263,9 +268,8 @@ class AgentOrchestrator:
 
         if critic_result.get("passed", True):
             return "fact_checker"
-        elif retry_count < 1:
-            # Allow one retry
-            state["retry_count"] = retry_count + 1
+        elif retry_count <= 1:
+            # Allow one retry (already incremented in _run_critic)
             return "reasoning"
         else:
             # Skip fact check if already retried

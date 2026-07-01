@@ -14,6 +14,8 @@ sqlalchemy==2.0.36
 aiomysql==0.2.0
 pymysql==1.1.1
 alembic==1.14.1
+firebase-admin==6.5.0
+google-cloud-firestore==2.19.0
 
 # === LLM & AI ===
 groq==0.13.1
@@ -21,6 +23,9 @@ google-generativeai==0.8.5
 langgraph==0.2.60
 langchain-core==0.3.33
 langchain-groq==0.2.4
+langchain-pinecone
+langchain-google-genai
+
 
 # === Document Parsing ===
 PyMuPDF==1.25.3
@@ -34,6 +39,8 @@ pytesseract==0.3.13
 faiss-cpu==1.9.0.post1
 rank-bm25==0.2.2
 sentence-transformers==3.3.1
+pinecone
+
 
 # === Knowledge Graph ===
 networkx==3.4.2

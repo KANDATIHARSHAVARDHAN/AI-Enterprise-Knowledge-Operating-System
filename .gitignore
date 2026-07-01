@@ -70,3 +70,11 @@ coverage/
 
 # Byte-compiled
 *.pyc
+
+# EKOS Project Specific
+backend/firebase-credentials.json
+backend/data/
+backend/db_data/
+backend/scratch/
+backend/knowledge_graph.json
+.ruff_cache/

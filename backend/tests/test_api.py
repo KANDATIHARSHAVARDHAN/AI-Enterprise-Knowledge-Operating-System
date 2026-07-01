@@ -26,3 +26,15 @@ def test_healthcheck_endpoint():
     data = response.json()
     assert "status" in data
     assert "checks" in data
+
+
+def test_query_validation_empty():
+    """Test the query endpoint rejects empty query strings."""
+    response = client.post("/api/query", json={"query": ""})
+    assert response.status_code == 422
+
+
+def test_query_validation_missing():
+    """Test the query endpoint rejects missing query strings."""
+    response = client.post("/api/query", json={})
+    assert response.status_code == 422

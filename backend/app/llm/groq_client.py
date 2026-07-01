@@ -195,9 +195,17 @@ def get_chat_model(
         "groq_api_key": settings.groq_api_key,
         "model_name": model,
         "temperature": temperature,
+        "max_tokens": 8000,
     }
 
     if json_mode:
         kwargs["model_kwargs"] = {"response_format": {"type": "json_object"}}
 
-    return ChatGroq(**kwargs)
+    primary_llm = ChatGroq(**kwargs)
+
+    # Automatically fall back to the smaller model if the primary model hits a rate limit
+    fallback_kwargs = kwargs.copy()
+    fallback_kwargs["model_name"] = settings.groq_model_small
+    fallback_llm = ChatGroq(**fallback_kwargs)
+
+    return primary_llm.with_fallbacks([fallback_llm])
