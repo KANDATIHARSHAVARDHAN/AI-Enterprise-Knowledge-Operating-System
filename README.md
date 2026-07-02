@@ -83,45 +83,107 @@ EKOS orchestrates **10 specialized AI agents** to search across documents, query
 
 ---
 
-## 📦 Quick Start & End-to-End Docker Deployment
+## 🚀 End-to-End Setup & Deployment Guide
 
-EKOS is fully containerized and ships with a `docker-compose.yml` file that orchestrates the entire application end-to-end (Frontend, Backend API, and MySQL Database). 
+Follow this detailed procedure to get the entire EKOS platform running on your local machine or server.
 
-### Prerequisites
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running.
-- Groq API Key ([free](https://console.groq.com))
-- Google AI API Key ([free](https://aistudio.google.com))
+### Phase 1: Prerequisites & Repository Setup
+1. **Clone the Repository**:
+   ```bash
+   git clone https://github.com/your-username/enterprise-knowledge-os.git
+   cd enterprise-knowledge-os
+   ```
+2. **Install Required Software**:
+   - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Required for containerized deployment)
+   - Python 3.11+ (If running backend locally)
+   - Node.js v22+ (If running frontend locally)
+3. **Acquire API Keys (All Free Tier)**:
+   - **Groq API Key**: Create an account at [console.groq.com](https://console.groq.com) and generate an API key.
+   - **Google AI Studio Key**: Go to [aistudio.google.com](https://aistudio.google.com) and generate an API key for the text-embedding models.
 
-### 1. Environment Configuration
-Navigate to the `backend` folder and create your environment file:
+### Phase 2: Environment Configuration
+1. Navigate to the `backend` directory:
+   ```bash
+   cd backend
+   ```
+2. Copy the example environment file to create your local `.env`:
+   ```bash
+   cp .env.example .env
+   ```
+3. Open the `.env` file in your editor and configure the following required fields:
+   ```env
+   GROQ_API_KEY=your_groq_api_key_here
+   GOOGLE_API_KEY=your_google_api_key_here
+   
+   # Note: The system requires a highly capable model for evaluation parsing.
+   # We default to llama-3.3-70b-versatile to avoid rate-limiting and parsing errors.
+   GROQ_MODEL_LARGE=llama-3.3-70b-versatile
+   GROQ_MODEL_SMALL=llama-3.1-8b-instant
+   ```
+
+### Phase 3: Deployment Options
+
+#### Option A: One-Click Docker Deployment (Recommended)
+This is the fastest way to get the entire stack (MySQL, FastAPI Backend, React Frontend) running.
+
+1. From the **root** of the project directory, run:
+   ```bash
+   docker-compose up --build -d
+   ```
+2. **What happens during this step?**
+   - **MySQL Database (`db`)**: Spins up, creates `ekos_db`, and automatically runs the `.sql` scripts inside `backend/scripts/` to create the schemas and seed the initial knowledge graph and user data.
+   - **FastAPI Backend (`backend`)**: Installs Python dependencies, waits for the database to be healthy, and starts the API on port `8000`.
+   - **React Frontend (`frontend`)**: Builds the React app and serves it via Nginx on port `3000`.
+3. Check the logs to ensure everything started successfully:
+   ```bash
+   docker-compose logs -f
+   ```
+
+#### Option B: Local Bare-Metal Development (For active coding)
+If you prefer to run the servers directly on your machine for debugging:
+
+**1. Start the Database**
+- Install MySQL 8.0 locally, or spin up just the database container:
+  ```bash
+  docker-compose up db -d
+  ```
+
+**2. Start the Backend (FastAPI)**
 ```bash
 cd backend
-cp .env.example .env
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
-Edit the `.env` file and insert your respective API keys (`GROQ_API_KEY`, `GOOGLE_API_KEY`, etc.).
+- The API will be available at `http://localhost:8000/docs`
 
-### 2. End-to-End Docker Deployment
-From the **root directory** of the project, spin up the entire cluster:
+**3. Start the Frontend (React)**
 ```bash
-docker-compose up --build -d
+cd frontend
+npm install
+npm run start
 ```
-*What happens during this step?*
-1. **MySQL Database**: The `db` container starts, initializes the `ekos_db`, and automatically runs the `setup_db.sql` and `seed_data.sql` scripts from the `backend/scripts` volume mount to populate the initial tables and schemas.
-2. **FastAPI Backend**: The `backend` container builds its Python 3.11 environment, installs requirements, waits for the database to be healthy, and starts the Uvicorn ASGI server on port `8000`.
-3. **React Frontend**: The `frontend` container builds a production optimized React bundle via Node.js and serves it using a lightweight Nginx web server on port `3000`.
+- The UI will be available at `http://localhost:3000`
 
-### 3. Access the Application
-Once the containers are running (verify with `docker-compose ps`), access the services at:
-- **Frontend Dashboard**: [http://localhost:3000](http://localhost:3000)
-- **Backend API Docs (Swagger)**: [http://localhost:8000/docs](http://localhost:8000/docs)
-- **MLflow Tracking Server** (if configured): [http://localhost:5000](http://localhost:5000)
+### Phase 4: Accessing the System & Running Queries
+Once the system is up and running (via Docker or locally):
 
-### 4. Shutting Down
-To stop the application and remove containers while preserving your database volumes:
+1. **Open the Dashboard**: Navigate to [http://localhost:3000](http://localhost:3000) in your browser.
+2. **Log In**: Use the default seeded admin credentials (or create a new user).
+3. **Upload Documents**: Go to the Knowledge Base section and upload sample PDFs or text files. The backend will automatically parse, embed, and store them in the FAISS vector index.
+4. **Run a Query**: Go to the Chat interface and ask a complex question (e.g., *"Why did the shuttle table fail?"*).
+5. **View Agent Traces**: You will see the LangGraph orchestrator kick off parallel agents (Retriever, SQL, Graph) and stream the final reasoned answer back to the UI, alongside RAGAS evaluation scores!
+
+### Phase 5: Shutting Down
+To gracefully stop the Docker containers while preserving your database volumes:
 ```bash
 docker-compose down
 ```
-To wipe everything including the database volume, run `docker-compose down -v`.
+If you wish to completely wipe the database and start fresh next time:
+```bash
+docker-compose down -v
+```
 
 ---
 
