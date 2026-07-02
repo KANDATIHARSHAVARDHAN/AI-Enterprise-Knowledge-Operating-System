@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: ekos_mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: ekos_db
+      MYSQL_USER: user
+      MYSQL_PASSWORD: userpassword
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+      # Mount initialization scripts. They run in alphabetical order.
+      - ./backend/scripts/setup_db.sql:/docker-entrypoint-initdb.d/01_setup.sql
+      - ./backend/scripts/seed_data.sql:/docker-entrypoint-initdb.d/02_seed.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ekos_backend
+    restart: always
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - MYSQL_HOST=db
+      - MYSQL_PORT=3306
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=rootpassword
+      - MYSQL_DATABASE=ekos_db
+      # For production, fill out the API keys in your .env or pass them here
+    env_file:
+      - ./backend/.env.example
+    volumes:
+      - ./backend/uploads:/app/uploads
+      - ./backend/vector_store:/app/vector_store
+      - ./backend/logs:/app/logs
+      - ./backend/scratch:/app/scratch
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ekos_frontend
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  db_data:

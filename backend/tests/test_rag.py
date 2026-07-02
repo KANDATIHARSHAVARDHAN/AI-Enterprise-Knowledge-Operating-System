@@ -3,7 +3,6 @@ EKOS RAG Unit Tests
 Tests retrieval logic, sparse retrievers, and Reciprocal Rank Fusion.
 """
 
-import pytest
 from app.rag.sparse_retriever import SparseRetriever
 from app.rag.hybrid_retriever import HybridRetriever
 

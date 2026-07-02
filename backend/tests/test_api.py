@@ -3,7 +3,6 @@ EKOS API Integration Tests
 Tests authentication routes, healthcheck, and document upload schemas.
 """
 
-import pytest
 from fastapi.testclient import TestClient
 from app.main import app
 from app.api.dependencies import get_current_user

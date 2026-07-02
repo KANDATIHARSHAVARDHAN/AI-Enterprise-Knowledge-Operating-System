@@ -1,9 +1,9 @@
 import asyncio
-import os
 from pathlib import Path
 from dotenv import load_dotenv
-load_dotenv()
 from app.ingestion.pipeline import IngestionPipeline
+
+load_dotenv()
 
 async def run():
     pipeline = IngestionPipeline()

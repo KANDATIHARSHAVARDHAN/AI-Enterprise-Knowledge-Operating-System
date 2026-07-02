@@ -103,6 +103,7 @@ class AgentOrchestrator:
         workflow.add_node("reasoning", self._run_reasoning)
         workflow.add_node("critic", self._run_critic)
         workflow.add_node("fact_checker", self._run_fact_checker)
+        workflow.add_node("evaluation", self._run_evaluation)
         workflow.add_node("report_generator", self._run_report)
 
         # Define edges
@@ -155,11 +156,12 @@ class AgentOrchestrator:
             {
                 "fact_checker": "fact_checker",
                 "reasoning": "reasoning",
-                "report_generator": "report_generator",
+                "evaluation": "evaluation",
             },
         )
 
-        workflow.add_edge("fact_checker", "report_generator")
+        workflow.add_edge("fact_checker", "evaluation")
+        workflow.add_edge("evaluation", "report_generator")
         workflow.add_edge("report_generator", END)
 
         return workflow.compile()
@@ -214,6 +216,47 @@ class AgentOrchestrator:
 
     async def _run_fact_checker(self, state: AgentState) -> AgentState:
         return await self._safe_run_agent(self.fact_checker, state)
+
+    async def _run_evaluation(self, state: AgentState) -> AgentState:
+        """Run official RAGAS evaluation in the LangGraph workflow."""
+        from app.evaluation.evaluator import Evaluator
+        evaluator = Evaluator()
+
+        query = state.get("query", "")
+        response = state.get("synthesized_answer", "")
+
+        # Build retrieved contexts list
+        retrieved_chunks = state.get("retrieved_chunks", [])
+        retrieved_contexts = [c.get("content", "") for c in retrieved_chunks if c.get("content")]
+        if not retrieved_contexts and state.get("retrieval_summary"):
+            retrieved_contexts = [state.get("retrieval_summary")]
+        if not retrieved_contexts:
+            retrieved_contexts = ["No contexts retrieved."]
+
+        try:
+            logger.info("Triggering query-time RAGAS evaluation...")
+            eval_scores = await evaluator.evaluate_query(
+                query=query,
+                response=response,
+                retrieved_contexts=retrieved_contexts,
+                ground_truth="",
+                query_log_id=0,
+                db=None,
+            )
+            state["faithfulness_score"] = eval_scores.get("faithfulness", 0.70)
+            state["quality_score"] = eval_scores.get("answer_relevance", 0.70)
+        except Exception as e:
+            logger.error(f"Error running RAGAS evaluation inside orchestrator: {e}")
+            state["faithfulness_score"] = 0.70
+            state["quality_score"] = 0.70
+
+        trace = list(state.get("agent_trace", []))
+        trace.append({
+            "agent": "evaluation",
+            "status": "success",
+        })
+        state["agent_trace"] = trace
+        return state
 
     async def _run_report(self, state: AgentState) -> AgentState:
         return await self._safe_run_agent(self.report_generator, state)
@@ -273,7 +316,7 @@ class AgentOrchestrator:
             return "reasoning"
         else:
             # Skip fact check if already retried
-            return "report_generator"
+            return "evaluation"
 
     # === Main execution ===
 

@@ -176,6 +176,7 @@ def get_chat_model(
     model_name: Optional[str] = None,
     json_mode: bool = False,
     temperature: float = 0.1,
+    max_tokens: int = 6000,
 ) -> ChatGroq:
     """
     Get a LangChain ChatGroq model instance.
@@ -184,6 +185,7 @@ def get_chat_model(
         model_name: Name of the Groq model to use (defaults to groq_model_large)
         json_mode: Whether to enable JSON output format
         temperature: Sampling temperature
+        max_tokens: Maximum tokens in response
 
     Returns:
         ChatGroq instance
@@ -195,7 +197,7 @@ def get_chat_model(
         "groq_api_key": settings.groq_api_key,
         "model_name": model,
         "temperature": temperature,
-        "max_tokens": 8000,
+        "max_tokens": max_tokens,
     }
 
     if json_mode:

@@ -38,9 +38,9 @@ class ReportGeneratorAgent(BaseAgent):
         # Clean raw markdown headers (##) and bold asterisks (**)
         cleaned_response = self._clean_formatting(raw_response)
 
-        faithfulness = state.get("faithfulness_score", 0.85)
-        context_relevance = max(quality_score, 0.80)
-        confidence = min(quality_score, faithfulness)
+        faithfulness = state.get("faithfulness_score", 0.80)
+        context_relevance = state.get("quality_score", 0.80)
+        confidence = min(context_relevance, faithfulness)
         state["confidence_score"] = confidence
 
         # Build separated evaluation footer

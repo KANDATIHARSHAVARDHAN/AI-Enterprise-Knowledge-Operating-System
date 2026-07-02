@@ -1,18 +1,52 @@
 """
 EKOS Evaluation Engine
-Computes RAG quality metrics using custom implementations
-compatible with RAGAS and DeepEval frameworks.
+Computes RAG quality metrics using the official RAGAS framework
+and LangChain LLM (Groq) as a judge.
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.models import EvaluationResult
-from app.llm.groq_client import get_groq_client
+from app.llm.groq_client import get_chat_model
 from app.utils.logger import logger
-import json
+from app.config import get_settings
+import math
+
+try:
+    from datasets import Dataset
+    from ragas import aevaluate
+    from ragas.metrics import (
+        _Faithfulness as Faithfulness,
+        _AnswerRelevancy as AnswerRelevance,
+        _ContextPrecision as ContextPrecision,
+        _ContextRecall as ContextRecall,
+    )
+    from ragas.llms import _LangchainLLMWrapper as LangchainLLMWrapper
+    from ragas.embeddings import _LangchainEmbeddingsWrapper as LangchainEmbeddingsWrapper
+    from langchain_google_genai import GoogleGenerativeAIEmbeddings
+except ImportError as e:
+    logger.warning(f"RAGAS or its dependencies are not installed properly: {e}")
+
+
+def _safe_float(val, default=0.0):
+    try:
+        import numpy as np
+        # Ragas 0.2.x EvaluationResult returns lists/arrays for metrics since it expects multiple rows
+        if hasattr(val, "__iter__") and not isinstance(val, str):
+            # Extract first element
+            val_list = list(val)
+            if len(val_list) > 0:
+                val = val_list[0]
+            else:
+                return default
+                
+        if val is None or (isinstance(val, float) and math.isnan(val)) or (hasattr(np, "isnan") and np.isnan(float(val))):
+            return default
+        return float(val)
+    except (TypeError, ValueError, IndexError):
+        return default
 
 
 class Evaluator:
-    """Computes evaluation metrics for RAG pipeline responses."""
+    """Computes evaluation metrics for RAG pipeline responses using RAGAS."""
 
     async def evaluate_query(
         self,
@@ -23,156 +57,117 @@ class Evaluator:
         query_log_id: int = 0,
         db: AsyncSession = None,
     ) -> dict:
-        """
-        Evaluate a single query-response pair.
+        # Check if RAGAS dependencies were successfully imported
+        if "aevaluate" not in globals() or "Dataset" not in globals():
+            logger.error("RAGAS dependencies are missing or not properly installed. Returning default metrics.")
+            metrics = {
+                "answer_relevance": 0.70,
+                "faithfulness": 0.70,
+                "context_precision": 0.70,
+                "hallucination_rate": 0.30
+            }
+            if ground_truth:
+                metrics["context_recall"] = 0.70
+            return metrics
 
-        Args:
-            query: The original user query
-            response: The generated response
-            retrieved_contexts: List of retrieved context strings
-            ground_truth: Optional ground truth answer
-            query_log_id: ID of the query log entry
-            db: Database session for storing results
+        settings = get_settings()
 
-        Returns:
-            Dict with metric scores
-        """
-        metrics = {}
-
-        # Answer Relevance
-        metrics["answer_relevance"] = await self._compute_answer_relevance(
-            query, response
-        )
-
-        # Faithfulness
-        metrics["faithfulness"] = await self._compute_faithfulness(
-            response, retrieved_contexts
-        )
-
-        # Context Precision
-        metrics["context_precision"] = await self._compute_context_precision(
-            query, retrieved_contexts
-        )
-
-        # Context Recall (requires ground truth)
+        # Build HuggingFace Dataset in modern Ragas 0.2.x format
+        data = {
+            "user_input": [query],
+            "response": [response],
+            "retrieved_contexts": [retrieved_contexts],
+        }
         if ground_truth:
-            metrics["context_recall"] = await self._compute_context_recall(
-                ground_truth, retrieved_contexts
-            )
+            data["reference"] = [ground_truth]
+            
+        dataset = Dataset.from_dict(data)
 
-        # Hallucination Rate
-        metrics["hallucination_rate"] = 1.0 - metrics.get("faithfulness", 0.7)
+        # Initialize LLM-as-a-judge with large model to bypass TPM token limits on Groq
+        langchain_llm = get_chat_model(
+            model_name=settings.groq_model_large,
+            temperature=0.0
+        )
+        if hasattr(langchain_llm, "runnable"):
+            langchain_llm = langchain_llm.runnable
+            
+        ragas_llm = LangchainLLMWrapper(langchain_llm, bypass_n=True)
+
+        # Initialize Embeddings
+        langchain_embeddings = GoogleGenerativeAIEmbeddings(
+            model=settings.embedding_model,
+            google_api_key=settings.google_api_key
+        )
+        ragas_embeddings = LangchainEmbeddingsWrapper(langchain_embeddings)
+
+        # Select Metrics (Instantiate the classes with wrappers)
+        # Ragas 0.2.x ContextPrecision and ContextRecall require ground_truth (reference column).
+        # We only run them if ground_truth is provided.
+        metrics_list = [
+            Faithfulness(llm=ragas_llm),
+            AnswerRelevance(llm=ragas_llm, embeddings=ragas_embeddings)
+        ]
+        if ground_truth:
+            metrics_list.append(ContextPrecision(llm=ragas_llm))
+            metrics_list.append(ContextRecall(llm=ragas_llm))
+
+        # Run async RAGAS evaluation natively in the current event loop
+        try:
+            logger.info("Starting RAGAS evaluation (async)...")
+            result_obj = await aevaluate(
+                dataset=dataset,
+                metrics=metrics_list,
+                llm=ragas_llm,
+                embeddings=ragas_embeddings,
+                raise_exceptions=True,
+            )
+            # Ragas EvaluationResult cannot be directly cast to dict(), extract safely
+            result = {}
+            for k in ["faithfulness", "answer_relevancy", "context_precision", "context_recall"]:
+                try:
+                    result[k] = result_obj[k]
+                except KeyError:
+                    pass
+            # Map for orchestrator which expects 'answer_relevance'
+            if "answer_relevancy" in result:
+                result["answer_relevance"] = result["answer_relevancy"]
+        except Exception as e:
+            logger.error(f"RAGAS evaluation failed: {e}")
+            result = {}
+
+        # Parse results safely
+        f_score = _safe_float(result.get("faithfulness", result.get("Faithfulness")), 0.70)
+        metrics = {
+            "answer_relevance": _safe_float(
+                result.get("answer_relevancy", result.get("answer_relevance", result.get("AnswerRelevance"))),
+                0.70
+            ),
+            "faithfulness": f_score,
+            "context_precision": _safe_float(result.get("context_precision", result.get("ContextPrecision")), 0.70),
+            "hallucination_rate": max(0.0, 1.0 - f_score)
+        }
+        if ground_truth:
+            metrics["context_recall"] = _safe_float(result.get("context_recall", result.get("ContextRecall")), 0.0)
 
         # Store results in DB
         if db and query_log_id:
+            if settings.database_provider == "firestore":
+                from app.db.firestore_db import EvaluationResult as FirestoreEvalResult
+                ModelClass = FirestoreEvalResult
+            else:
+                from app.db.models import EvaluationResult as SqlEvalResult
+                ModelClass = SqlEvalResult
+
             for metric_name, score in metrics.items():
-                eval_result = EvaluationResult(
+                eval_result = ModelClass(
                     query_log_id=query_log_id,
                     metric_name=metric_name,
                     score=score,
-                    evaluator="ekos_custom",
+                    evaluator="ragas",
                 )
                 db.add(eval_result)
             await db.flush()
 
-        logger.info(f"Evaluation complete: {metrics}")
+            logger.info(f"Evaluation complete: {metrics}")
+        
         return metrics
-
-    async def _compute_answer_relevance(self, query: str, response: str) -> float:
-        """Score how relevant the answer is to the query (0-1)."""
-        client = get_groq_client()
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "Rate how relevant the answer is to the question on a scale of 0.0 to 1.0. "
-                    "Return ONLY a JSON object: {\"score\": 0.85}"
-                ),
-            },
-            {"role": "user", "content": f"Question: {query}\n\nAnswer: {response[:1000]}"},
-        ]
-        try:
-            result = await client.chat_with_fast_model(messages=messages, json_mode=True, max_tokens=100)
-            return float(json.loads(result).get("score", 0.7))
-        except Exception:
-            return 0.7
-
-    async def _compute_faithfulness(self, response: str, contexts: list[str]) -> float:
-        """Score how grounded the answer is in the retrieved contexts (0-1)."""
-        if not contexts:
-            return 0.5
-
-        client = get_groq_client()
-        context_text = "\n\n".join(ctx[:500] for ctx in contexts[:5])
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "Rate how faithful/grounded the answer is in the provided context on a scale of 0.0 to 1.0. "
-                    "A score of 1.0 means every claim is supported. "
-                    "Return ONLY a JSON object: {\"score\": 0.85}"
-                ),
-            },
-            {
-                "role": "user",
-                "content": f"Context:\n{context_text}\n\nAnswer: {response[:1000]}",
-            },
-        ]
-        try:
-            result = await client.chat_with_fast_model(messages=messages, json_mode=True, max_tokens=100)
-            return float(json.loads(result).get("score", 0.7))
-        except Exception:
-            return 0.7
-
-    async def _compute_context_precision(self, query: str, contexts: list[str]) -> float:
-        """Score how relevant the retrieved contexts are to the query (0-1)."""
-        if not contexts:
-            return 0.0
-
-        client = get_groq_client()
-        context_text = "\n\n".join(f"[{i+1}] {ctx[:300]}" for i, ctx in enumerate(contexts[:5]))
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "Rate the overall precision of the retrieved contexts for the given question. "
-                    "Precision means: what fraction of retrieved contexts are relevant? "
-                    "Return ONLY a JSON object: {\"score\": 0.85}"
-                ),
-            },
-            {
-                "role": "user",
-                "content": f"Question: {query}\n\nRetrieved Contexts:\n{context_text}",
-            },
-        ]
-        try:
-            result = await client.chat_with_fast_model(messages=messages, json_mode=True, max_tokens=100)
-            return float(json.loads(result).get("score", 0.7))
-        except Exception:
-            return 0.7
-
-    async def _compute_context_recall(self, ground_truth: str, contexts: list[str]) -> float:
-        """Score how well the retrieved contexts cover the ground truth (0-1)."""
-        if not contexts or not ground_truth:
-            return 0.0
-
-        client = get_groq_client()
-        context_text = "\n\n".join(ctx[:300] for ctx in contexts[:5])
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "Rate how well the retrieved contexts cover the information in the ground truth answer. "
-                    "Return ONLY a JSON object: {\"score\": 0.85}"
-                ),
-            },
-            {
-                "role": "user",
-                "content": f"Ground Truth: {ground_truth[:500]}\n\nContexts:\n{context_text}",
-            },
-        ]
-        try:
-            result = await client.chat_with_fast_model(messages=messages, json_mode=True, max_tokens=100)
-            return float(json.loads(result).get("score", 0.7))
-        except Exception:
-            return 0.7

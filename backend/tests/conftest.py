@@ -3,12 +3,9 @@ EKOS Test Fixtures
 Configures pytest, DB engine, and mock clients for testing.
 """
 
-import asyncio
-from typing import AsyncGenerator, Generator
 import pytest
-import pytest_asyncio
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from app.db.database import Base
+from sqlalchemy.ext.asyncio import AsyncSession
+from unittest.mock import AsyncMock, MagicMock
 from app.db.models import User
 from app.security.auth import hash_password
 
@@ -21,8 +18,6 @@ TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"  # Wait, SQLite doesn't use a
 # Let's mock the db session or use a simple mock class for db operations,
 # or create a mock database session fixture that doesn't actually hit a DB but returns mock results.
 # Let's write standard pytest fixtures that mock AsyncSession.
-
-from unittest.mock import AsyncMock, MagicMock
 
 
 @pytest.fixture

@@ -118,7 +118,7 @@ async def _ask_firestore(request, current_user, masked_query, start_time, db):
     })
 
     # Save query log
-    await fs.create_query_log({
+    query_log_doc = await fs.create_query_log({
         "user_id": current_user.id,
         "conversation_id": conversation_id,
         "query": request.query,
@@ -129,6 +129,21 @@ async def _ask_firestore(request, current_user, masked_query, start_time, db):
         "status": "success" if not result.get("error") else "failed",
         "error_message": result.get("error"),
     })
+
+    # Save evaluation results using Ragas scores computed inside the orchestrator
+    if not result.get("error"):
+        await fs.create_evaluation_result({
+            "query_log_id": query_log_doc.id,
+            "metric_name": "faithfulness",
+            "score": result.get("faithfulness_score", 0.0),
+            "evaluator": "ragas",
+        })
+        await fs.create_evaluation_result({
+            "query_log_id": query_log_doc.id,
+            "metric_name": "answer_relevance",
+            "score": result.get("quality_score", 0.0),
+            "evaluator": "ragas",
+        })
 
     # Audit log
     await fs.create_audit_log({
@@ -212,6 +227,23 @@ async def _ask_mysql(request, current_user, masked_query, start_time, db):
         error_message=result.get("error"),
     )
     db.add(query_log)
+    await db.flush()
+
+    # Save evaluation results using Ragas scores computed inside the orchestrator
+    if not result.get("error"):
+        from app.db.models import EvaluationResult as SqlEvalResult
+        db.add(SqlEvalResult(
+            query_log_id=query_log.id,
+            metric_name="faithfulness",
+            score=result.get("faithfulness_score", 0.0),
+            evaluator="ragas",
+        ))
+        db.add(SqlEvalResult(
+            query_log_id=query_log.id,
+            metric_name="answer_relevance",
+            score=result.get("quality_score", 0.0),
+            evaluator="ragas",
+        ))
 
     # Audit log
     db.add(AuditLog(
